@@ -60,3 +60,12 @@ def price_limits(symbol: str, client: TossClient = Depends(get_client)):
         return client.get_price_limits(symbol)
     except TossApiError as e:
         raise to_http(e)
+
+
+@router.get("/exchange-rate")
+def exchange_rate(base: str = "USD", quote: str = "KRW",
+                  client: TossClient = Depends(get_client)):
+    try:
+        return client.get_exchange_rate(base, quote)
+    except TossApiError as e:
+        raise to_http(e)

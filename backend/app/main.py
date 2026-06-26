@@ -15,12 +15,23 @@ from pathlib import Path
 # backend/ 를 import 경로에 추가 -> `import tossapi`, `import app...` 동작
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from contextlib import asynccontextmanager  # noqa: E402
+
 from fastapi import FastAPI  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 
-from app.routers import account, market, orders  # noqa: E402
+from app.bot import scheduler  # noqa: E402
+from app.routers import account, bot, market, orders  # noqa: E402
 
-app = FastAPI(title="Tossapi Backend", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    scheduler.start()
+    yield
+    scheduler.stop()
+
+
+app = FastAPI(title="Tossapi Backend", version="0.1.0", lifespan=lifespan)
 
 # Vite 개발 서버(기본 5173)에서의 호출 허용
 app.add_middleware(
@@ -33,6 +44,7 @@ app.add_middleware(
 app.include_router(market.router)
 app.include_router(account.router)
 app.include_router(orders.router)
+app.include_router(bot.router)
 
 
 @app.get("/api/health")
