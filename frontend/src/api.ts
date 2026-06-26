@@ -10,8 +10,11 @@ import type {
   SweepResult,
   Holdings,
   Orderbook,
+  OrdersPage,
+  IndexSummary,
   Price,
   Quote,
+  RankItem,
   StockInfo,
 } from './types'
 
@@ -62,7 +65,10 @@ export const api = {
   candles: (symbol: string, interval: string, count = 100) =>
     get<CandlePage>(`/api/market/candles?symbol=${symbol}&interval=${interval}&count=${count}`),
   exchangeRate: () => get<{ rate: string }>('/api/market/exchange-rate?base=USD&quote=KRW'),
+  ranking: () => get<RankItem[]>('/api/market/ranking'),
+  marketSummary: () => get<IndexSummary[]>('/api/market/market-summary'),
   holdings: () => get<Holdings>('/api/account/holdings'),
+  openOrders: () => get<OrdersPage>('/api/orders?status=OPEN'),
   buyingPower: (currency: string) => get<BuyingPower>(`/api/account/buying-power?currency=${currency}`),
 
   // --- 적립봇 ---
@@ -85,7 +91,11 @@ export async function loadQuotes(symbolsCsv: string): Promise<Quote[]> {
   const symbols = symbolsCsv.split(',').map((s) => s.trim()).filter(Boolean)
   if (!symbols.length) return []
 
-  const [prices, stocks] = await Promise.all([api.prices(symbolsCsv), api.stocks(symbolsCsv)])
+  // 현재가는 필수, 종목정보(이름)는 브로커에 따라 없을 수 있으니 실패해도 진행
+  const [prices, stocks] = await Promise.all([
+    api.prices(symbolsCsv),
+    api.stocks(symbolsCsv).catch(() => [] as StockInfo[]),
+  ])
   const priceMap = new Map(prices.map((p) => [p.symbol, p]))
   const stockMap = new Map(stocks.map((s) => [s.symbol, s]))
 

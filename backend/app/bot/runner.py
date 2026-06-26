@@ -21,9 +21,10 @@ from .strategy import decide
 
 
 def run_once(client: TossClient | None = None) -> dict:
+    from brokers import get_broker
     cfg = BotConfig.load()
     state = BotState.load()
-    client = client or TossClient()
+    client = client or get_broker()
 
     # 1. 직전 주문 체결 확인 (LIVE)
     executor.confirm_previous_fill(client, cfg, state)

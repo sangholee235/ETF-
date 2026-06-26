@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-_CONFIG_PATH = Path(__file__).resolve().parents[2] / "bot_config.json"
+# 상태/설정 보관 디렉터리. 컨테이너에선 TOSSAPI_DATA_DIR(볼륨)로 분리.
+_DATA_DIR = Path(os.getenv("TOSSAPI_DATA_DIR") or Path(__file__).resolve().parents[2])
+_CONFIG_PATH = _DATA_DIR / "bot_config.json"
 
 
 @dataclass

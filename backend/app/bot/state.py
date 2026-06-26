@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import asdict, dataclass, field
 from datetime import date
 from pathlib import Path
 
-_STATE_PATH = Path(__file__).resolve().parents[2] / "data" / "bot_state.json"
+_DATA_DIR = Path(os.getenv("TOSSAPI_DATA_DIR") or Path(__file__).resolve().parents[2])
+_STATE_PATH = _DATA_DIR / "data" / "bot_state.json"
 
 
 @dataclass

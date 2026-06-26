@@ -28,7 +28,8 @@ export default function Chart({ symbol, name }: { symbol: string; name?: string 
   useEffect(() => {
     if (!ref.current) return
     const chart = createChart(ref.current, {
-      height: 340,
+      height: 360,
+      width: ref.current.clientWidth,
       layout: { background: { color: 'transparent' }, textColor: '#b0b4ba', fontFamily: 'inherit' },
       grid: { vertLines: { color: '#232329' }, horzLines: { color: '#232329' } },
       rightPriceScale: { borderColor: '#2c2c34', scaleMargins: { top: 0.08, bottom: 0.26 } },
@@ -49,6 +50,7 @@ export default function Chart({ symbol, name }: { symbol: string; name?: string 
     chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } })
     chartRef.current = chart
 
+    // 너비만 반응형으로 갱신 (높이는 360 고정 → 피드백 루프 방지)
     const ro = new ResizeObserver(() => {
       if (ref.current) chart.applyOptions({ width: ref.current.clientWidth })
     })
@@ -96,7 +98,7 @@ export default function Chart({ symbol, name }: { symbol: string; name?: string 
   }, [symbol, interval])
 
   return (
-    <section className="card">
+    <section className="card chart-card">
       <div className="card-head">
         <h2>{name ?? symbol} 차트 <span className="muted" style={{ fontWeight: 400 }}>· MA20 · 거래량</span></h2>
         <div className="seg">
@@ -105,7 +107,7 @@ export default function Chart({ symbol, name }: { symbol: string; name?: string 
         </div>
       </div>
       {err && <p className="err">{err}</p>}
-      <div ref={ref} style={{ width: '100%' }} />
+      <div ref={ref} className="chart-host" />
     </section>
   )
 }

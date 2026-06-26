@@ -6,12 +6,15 @@ from functools import lru_cache
 
 from fastapi import HTTPException
 
-from tossapi import TossClient, TossApiError
+from tossapi import TossApiError
+
+from brokers import Broker, get_broker
 
 
 @lru_cache(maxsize=1)
-def get_client() -> TossClient:
-    return TossClient()
+def get_client() -> Broker:
+    """현재 설정된 증권사 브로커 (BROKER=toss|kiwoom)."""
+    return get_broker()
 
 
 def to_http(exc: TossApiError) -> HTTPException:

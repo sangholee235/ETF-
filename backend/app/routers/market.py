@@ -62,6 +62,26 @@ def price_limits(symbol: str, client: TossClient = Depends(get_client)):
         raise to_http(e)
 
 
+@router.get("/ranking")
+def ranking(client: TossClient = Depends(get_client)):
+    """주요 종목 랭킹 (등락률·거래량). 큐레이션 유니버스 기반, 60초 캐시."""
+    from ..market_ranking import get_ranking
+    try:
+        return get_ranking(client)
+    except TossApiError as e:
+        raise to_http(e)
+
+
+@router.get("/market-summary")
+def market_summary(client: TossClient = Depends(get_client)):
+    """상단 지수 바 (지수 ETF 프록시 + 미니 스파크라인). 60초 캐시."""
+    from ..market_ranking import get_market_summary
+    try:
+        return get_market_summary(client)
+    except TossApiError as e:
+        raise to_http(e)
+
+
 @router.get("/exchange-rate")
 def exchange_rate(base: str = "USD", quote: str = "KRW",
                   client: TossClient = Depends(get_client)):

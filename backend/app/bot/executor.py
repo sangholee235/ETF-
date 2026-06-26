@@ -71,9 +71,16 @@ def confirm_previous_fill(client: TossClient, cfg: BotConfig, state: BotState) -
 
     if filled_qty > 0 and status in ("FILLED", "PARTIAL_FILLED"):
         avg = float(exe.get("averageFilledPrice") or 0)
+        amount = int(avg * filled_qty)
         state.total_filled_qty += filled_qty
-        state.total_invested_krw += int(avg * filled_qty)
+        state.total_invested_krw += amount
         state.consecutive_misses = 0
+        # 포트폴리오 모드: 체결된 종목의 누적 투입을 기록해야 비중 추종이 동작
+        sym = order.get("symbol")
+        if sym:
+            inv = state.portfolio_invested or {}
+            inv[sym] = int(inv.get(sym, 0)) + amount
+            state.portfolio_invested = inv
     else:
         state.consecutive_misses += 1
 

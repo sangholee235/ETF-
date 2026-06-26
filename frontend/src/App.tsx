@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, loadQuotes } from './api'
-import type { Account, BuyingPower, Holdings, Quote } from './types'
+import type { Account, BuyingPower, Holdings, Order, Quote } from './types'
 import BotPanel from './BotPanel'
 import Chart from './Chart'
 import HoldingsDonut from './HoldingsDonut'
 import LogsPanel from './LogsPanel'
+import RankingPanel from './RankingPanel'
 import './App.css'
 
 const fmt = (v: string | number | null | undefined) =>
@@ -15,19 +16,21 @@ const signClass = (v: string | null | undefined) =>
   v == null ? '' : Number(v) >= 0 ? 'up' : 'down'
 
 export default function App() {
-  const initialTab = (['bot', 'logs'].includes(location.hash.slice(1))
+  const initialTab = (['rank', 'bot', 'logs'].includes(location.hash.slice(1))
     ? location.hash.slice(1)
-    : 'view') as 'view' | 'bot' | 'logs'
-  const [tab, setTabState] = useState<'view' | 'bot' | 'logs'>(initialTab)
-  const setTab = (t: 'view' | 'bot' | 'logs') => {
+    : 'view') as 'view' | 'rank' | 'bot' | 'logs'
+  const [tab, setTabState] = useState<'view' | 'rank' | 'bot' | 'logs'>(initialTab)
+  const setTab = (t: 'view' | 'rank' | 'bot' | 'logs') => {
     setTabState(t)
     history.replaceState(null, '', t === 'view' ? location.pathname : `#${t}`)
   }
-  const [symbols, setSymbols] = useState(() => localStorage.getItem('symbols') || '005930,000660,AAPL')
-  const [selected, setSelected] = useState(() => localStorage.getItem('selected') || '005930')
+  // 기본 워치리스트: 지수 ETF (KODEX200·미국S&P500·나스닥100·코스닥150)
+  const DEFAULT_SYMBOLS = '069500,360750,133690,229200'
+  const [symbols, setSymbols] = useState(() => localStorage.getItem('watchlist_v2') || DEFAULT_SYMBOLS)
+  const [selected, setSelected] = useState(() => localStorage.getItem('selected_v2') || '069500')
 
-  useEffect(() => { localStorage.setItem('symbols', symbols) }, [symbols])
-  useEffect(() => { localStorage.setItem('selected', selected) }, [selected])
+  useEffect(() => { localStorage.setItem('watchlist_v2', symbols) }, [symbols])
+  useEffect(() => { localStorage.setItem('selected_v2', selected) }, [selected])
   const [auto, setAuto] = useState(true)
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
@@ -37,6 +40,7 @@ export default function App() {
   const [accounts, setAccounts] = useState<Account[]>([])
   const [quotes, setQuotes] = useState<Quote[]>([])
   const [holdings, setHoldings] = useState<Holdings | null>(null)
+  const [openOrders, setOpenOrders] = useState<Order[]>([])
   const [bpKrw, setBpKrw] = useState<BuyingPower | null>(null)
   const [bpUsd, setBpUsd] = useState<BuyingPower | null>(null)
 
@@ -47,18 +51,20 @@ export default function App() {
     setStatus('조회 중...')
     setError('')
     try {
-      const [acc, q, h, bk, bu] = await Promise.all([
-        api.accounts(),
+      const [acc, q, h, bk, bu, oo] = await Promise.all([
+        api.accounts().catch(() => []),
         loadQuotes(symbolsRef.current),
         api.holdings().catch(() => null),
         api.buyingPower('KRW').catch(() => null),
         api.buyingPower('USD').catch(() => null),
+        api.openOrders().catch(() => null),
       ])
       setAccounts(acc)
       setQuotes(q)
       setHoldings(h)
       setBpKrw(bk)
       setBpUsd(bu)
+      setOpenOrders(oo?.orders ?? [])
       setStatus('갱신: ' + new Date().toLocaleTimeString())
       setLoaded(true)
       setConnected(true)
@@ -97,6 +103,7 @@ export default function App() {
         </div>
         <nav className="top-tabs">
           <button className={`tab ${tab === 'view' ? 'on' : ''}`} onClick={() => setTab('view')}>조회</button>
+          <button className={`tab ${tab === 'rank' ? 'on' : ''}`} onClick={() => setTab('rank')}>랭킹</button>
           <button className={`tab ${tab === 'bot' ? 'on' : ''}`} onClick={() => setTab('bot')}>적립봇</button>
           <button className={`tab ${tab === 'logs' ? 'on' : ''}`} onClick={() => setTab('logs')}>로그</button>
         </nav>
@@ -111,6 +118,8 @@ export default function App() {
         <main className="single"><BotPanel /></main>
       ) : tab === 'logs' ? (
         <main className="view-grid"><LogsPanel /></main>
+      ) : tab === 'rank' ? (
+        <main className="view-grid"><RankingPanel /></main>
       ) : (
       <main className="view-grid">
         <section className="card toolbar span2">
@@ -118,7 +127,7 @@ export default function App() {
             value={symbols}
             onChange={(e) => setSymbols(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && refresh()}
-            placeholder="005930,000660,AAPL"
+            placeholder="069500,360750,133690"
           />
           <button onClick={refresh}>조회</button>
           <label className="muted">
@@ -149,7 +158,7 @@ export default function App() {
           </div>
         </section>
 
-        <section className="card">
+        <section className="card quotes-card">
           <h2>시세 <span className="muted" style={{ fontWeight: 400 }}>· 종목 클릭하면 차트</span></h2>
           <div className="table-scroll">
           <table>
@@ -190,6 +199,38 @@ export default function App() {
 
         <Chart symbol={selected} name={quotes.find((q) => q.symbol === selected)?.name} />
 
+        <section className="card span2">
+          <h2>구매 대기 (미체결 주문)</h2>
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>종목</th><th>구분</th><th>유형</th><th>가격</th>
+                  <th>수량</th><th>체결</th><th>상태</th><th>주문시각</th>
+                </tr>
+              </thead>
+              <tbody>
+                {openOrders.length === 0 ? (
+                  <tr><td colSpan={8} className="muted">미체결 주문 없음</td></tr>
+                ) : (
+                  openOrders.map((o) => (
+                    <tr key={o.orderId}>
+                      <td>{o.symbol}</td>
+                      <td className={o.side === 'BUY' ? 'up' : 'down'}>{o.side === 'BUY' ? '매수' : '매도'}</td>
+                      <td>{o.orderType === 'LIMIT' ? '지정가' : '시장가'}</td>
+                      <td>{o.price ? fmt(o.price) : '-'}</td>
+                      <td>{fmt(o.quantity)}</td>
+                      <td>{fmt(o.execution.filledQuantity)}/{fmt(o.quantity)}</td>
+                      <td className="muted">{o.status}</td>
+                      <td className="muted">{new Date(o.orderedAt).toLocaleString()}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
         <HoldingsDonut holdings={holdings} />
 
         <section className="card span2">
@@ -228,6 +269,9 @@ export default function App() {
       <nav className="bottom-nav">
         <button className={tab === 'view' ? 'on' : ''} onClick={() => setTab('view')}>
           <span className="ico">📊</span>조회
+        </button>
+        <button className={tab === 'rank' ? 'on' : ''} onClick={() => setTab('rank')}>
+          <span className="ico">🏆</span>랭킹
         </button>
         <button className={tab === 'bot' ? 'on' : ''} onClick={() => setTab('bot')}>
           <span className="ico">🤖</span>적립봇

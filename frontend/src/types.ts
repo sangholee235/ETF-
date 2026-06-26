@@ -163,6 +163,46 @@ export interface EtfCatalogItem {
   lastPrice: string | null
 }
 
+export interface RankItem {
+  symbol: string
+  name: string
+  market: string | null
+  lastPrice: number
+  changePct: number | null
+  volume: number | null
+  value: number | null
+  marketCap: number | null
+  currency: string
+}
+
+export interface IndexSummary {
+  symbol: string
+  label: string
+  proxy: string
+  lastPrice: number | null
+  changePct: number | null
+  spark: number[]
+}
+
+export interface Order {
+  orderId: string
+  symbol: string
+  side: 'BUY' | 'SELL'
+  orderType: 'LIMIT' | 'MARKET'
+  status: string
+  price: string | null
+  quantity: string
+  currency: string
+  orderedAt: string
+  execution: { filledQuantity: string; averageFilledPrice: string | null }
+}
+
+export interface OrdersPage {
+  orders: Order[]
+  nextCursor: string | null
+  hasNext: boolean
+}
+
 export interface Quote {
   symbol: string
   name: string

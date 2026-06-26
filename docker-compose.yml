@@ -1,0 +1,31 @@
+# 토스 적립봇 — 원클릭 실행
+#   cp .env.example .env   # 토스 키 입력
+#   docker compose up -d   # → http://localhost:8080
+services:
+  backend:
+    build: ./backend
+    env_file: .env          # 토스 키를 환경변수로 주입 (이미지에 굽지 않음)
+    environment:
+      - TOSSAPI_DATA_DIR=/appdata
+      - TZ=Asia/Seoul
+    volumes:
+      - bot_data:/appdata    # 봇 설정·체결기록 영속화 (재배포해도 유지)
+    restart: unless-stopped  # 크래시·재부팅 후 자동 재기동 (24h 적립봇)
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "8080:80"            # 대시보드: http://localhost:8080
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  bot_data:
