@@ -226,6 +226,29 @@ button.ghost:hover { color: var(--up); filter: none; }
 select { background: #15151a; border: 1px solid var(--line); color: var(--txt); padding: 9px 12px; border-radius: 10px; font-size: 14px; }
 .warn { color: var(--accent) !important; }
 
+/* 포트폴리오 수렴 진행률 바 */
+.pf-row-wrap { border-bottom: 1px solid var(--line-soft); }
+.pf-row-wrap .pf-row { border-bottom: none; padding-bottom: 2px; }
+.pf-prog { padding: 0 0 9px 20px; }
+.pf-bar { position: relative; height: 6px; border-radius: 3px; background: var(--line); overflow: visible; }
+.pf-bar-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+.pf-bar-target { position: absolute; top: -2px; width: 2px; height: 10px; background: var(--txt); border-radius: 1px; }
+.pf-prog-txt { font-size: 11.5px; display: inline-block; margin-top: 4px; }
+
+/* 도움말 아이콘 */
+.help { color: var(--muted); cursor: help; font-size: 11px; }
+
+/* 다음 적립 미리보기 카드 */
+.nextbuy { border-color: var(--accent-weak); }
+.nextbuy-main { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+.nb-sym { font-size: 16px; font-weight: 700; }
+.nb-order { font-size: 20px; font-weight: 800; letter-spacing: -0.02em; margin-top: 4px; }
+.nb-cost { text-align: right; }
+.nb-cost .big { font-size: 20px; font-weight: 800; }
+.pill { font-size: 12.5px; font-weight: 600; padding: 4px 11px; border-radius: 999px; white-space: nowrap; }
+.pill.ok { background: rgba(43,138,62,0.18); color: #5bc77a; }
+.pill.block { background: rgba(240,68,82,0.16); color: #ff7676; }
+
 /* 상단 지수 바 (토스 메인풍) */
 .marketbar { display: flex; gap: 10px; flex-wrap: wrap; padding: 14px 16px; }
 .marketbar .idx {

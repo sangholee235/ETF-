@@ -6,13 +6,13 @@ from fastapi import APIRouter, Depends
 
 from tossapi import TossClient, TossApiError
 
-from ..deps import get_client, to_http
+from ..deps import client_dep, to_http
 
 router = APIRouter(prefix="/api/account", tags=["account"])
 
 
 @router.get("/accounts")
-def accounts(client: TossClient = Depends(get_client)):
+def accounts(client: TossClient = Depends(client_dep)):
     try:
         return client.get_accounts()
     except TossApiError as e:
@@ -20,7 +20,7 @@ def accounts(client: TossClient = Depends(get_client)):
 
 
 @router.get("/holdings")
-def holdings(symbol: str | None = None, client: TossClient = Depends(get_client)):
+def holdings(symbol: str | None = None, client: TossClient = Depends(client_dep)):
     try:
         return client.get_holdings(symbol)
     except TossApiError as e:
@@ -28,7 +28,7 @@ def holdings(symbol: str | None = None, client: TossClient = Depends(get_client)
 
 
 @router.get("/buying-power")
-def buying_power(currency: str = "KRW", client: TossClient = Depends(get_client)):
+def buying_power(currency: str = "KRW", client: TossClient = Depends(client_dep)):
     try:
         return client.get_buying_power(currency)
     except TossApiError as e:
@@ -36,7 +36,7 @@ def buying_power(currency: str = "KRW", client: TossClient = Depends(get_client)
 
 
 @router.get("/sellable-quantity")
-def sellable_quantity(symbol: str, client: TossClient = Depends(get_client)):
+def sellable_quantity(symbol: str, client: TossClient = Depends(client_dep)):
     try:
         return client.get_sellable_quantity(symbol)
     except TossApiError as e:
@@ -44,7 +44,7 @@ def sellable_quantity(symbol: str, client: TossClient = Depends(get_client)):
 
 
 @router.get("/commissions")
-def commissions(client: TossClient = Depends(get_client)):
+def commissions(client: TossClient = Depends(client_dep)):
     try:
         return client.get_commissions()
     except TossApiError as e:

@@ -9,7 +9,15 @@ from datetime import date
 from pathlib import Path
 
 _DATA_DIR = Path(os.getenv("TOSSAPI_DATA_DIR") or Path(__file__).resolve().parents[2])
-_STATE_PATH = _DATA_DIR / "data" / "bot_state.json"
+_LEGACY_STATE_PATH = _DATA_DIR / "data" / "bot_state.json"
+
+
+def _resolve_broker(broker: str | None) -> str:
+    return (broker or os.getenv("BROKER", "toss")).lower()
+
+
+def _state_path(broker: str | None) -> Path:
+    return _DATA_DIR / "data" / f"bot_state_{_resolve_broker(broker)}.json"
 
 
 @dataclass
@@ -39,19 +47,22 @@ class BotState:
     logs: list = field(default_factory=list)  # list[dict]
 
     @classmethod
-    def load(cls) -> "BotState":
-        if _STATE_PATH.exists():
-            data = json.loads(_STATE_PATH.read_text(encoding="utf-8"))
-            st = cls()
+    def load(cls, broker: str | None = None) -> "BotState":
+        st = cls()
+        st._broker = _resolve_broker(broker)
+        path = _state_path(broker)
+        src = path if path.exists() else _LEGACY_STATE_PATH
+        if src.exists():
+            data = json.loads(src.read_text(encoding="utf-8"))
             for k, v in data.items():
                 if hasattr(st, k):
                     setattr(st, k, v)
-            return st
-        return cls()
+        return st
 
     def save(self) -> None:
-        _STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        _STATE_PATH.write_text(
+        path = _state_path(getattr(self, "_broker", None))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
             json.dumps(asdict(self), ensure_ascii=False, indent=2), encoding="utf-8"
         )
 

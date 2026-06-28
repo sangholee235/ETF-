@@ -16,7 +16,7 @@ import { api } from './api'
 
 type Interval = '1d' | '1m'
 
-export default function Chart({ symbol, name }: { symbol: string; name?: string }) {
+export default function Chart({ symbol, name, broker }: { symbol: string; name?: string; broker?: string }) {
   const ref = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const candleRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
@@ -66,7 +66,7 @@ export default function Chart({ symbol, name }: { symbol: string; name?: string 
     let alive = true
     setErr('')
     api
-      .candles(symbol, interval, 150)
+      .candles(symbol, interval, 150, broker)
       .then((page) => {
         if (!alive || !candleRef.current) return
         const sorted = [...page.candles].sort(
@@ -95,7 +95,7 @@ export default function Chart({ symbol, name }: { symbol: string; name?: string 
     return () => {
       alive = false
     }
-  }, [symbol, interval])
+  }, [symbol, interval, broker])
 
   return (
     <section className="card chart-card">

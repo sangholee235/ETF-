@@ -34,15 +34,19 @@ class FakeClient:
         return {"currency": currency, "cashBuyingPower": str(self._bp)}
 
     def get_kr_market_calendar(self, date=None):
+        # 실행 시각과 무관하게 결정적이도록 '오늘(KST) 하루 전체'를 운영시간으로 본다.
+        from datetime import datetime, timezone, timedelta
+
+        today = datetime.now(timezone(timedelta(hours=9))).date().isoformat()
         if not self._open:
-            return {"today": {"date": "2026-06-26", "integrated": None}}
+            return {"today": {"date": today, "integrated": None}}
         return {
             "today": {
-                "date": "2026-06-26",
+                "date": today,
                 "integrated": {
                     "regularMarket": {
-                        "startTime": "2026-06-26T09:00:00+09:00",
-                        "endTime": "2026-06-26T23:59:00+09:00",
+                        "startTime": f"{today}T00:00:00+09:00",
+                        "endTime": f"{today}T23:59:59+09:00",
                     }
                 },
             }

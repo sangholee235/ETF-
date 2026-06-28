@@ -9,7 +9,16 @@ from pathlib import Path
 
 # 상태/설정 보관 디렉터리. 컨테이너에선 TOSSAPI_DATA_DIR(볼륨)로 분리.
 _DATA_DIR = Path(os.getenv("TOSSAPI_DATA_DIR") or Path(__file__).resolve().parents[2])
-_CONFIG_PATH = _DATA_DIR / "bot_config.json"
+_LEGACY_CONFIG_PATH = _DATA_DIR / "bot_config.json"
+
+
+def _resolve_broker(broker: str | None) -> str:
+    return (broker or os.getenv("BROKER", "toss")).lower()
+
+
+def _config_path(broker: str | None) -> Path:
+    """브로커별 설정 파일 경로 (bot_config_{broker}.json)."""
+    return _DATA_DIR / f"bot_config_{_resolve_broker(broker)}.json"
 
 
 @dataclass
@@ -42,17 +51,21 @@ class BotConfig:
     enabled: bool = True             # False: 봇 완전 정지 (킬스위치)
 
     @classmethod
-    def load(cls) -> "BotConfig":
+    def load(cls, broker: str | None = None) -> "BotConfig":
         cfg = cls()
-        if _CONFIG_PATH.exists():
-            data = json.loads(_CONFIG_PATH.read_text(encoding="utf-8"))
+        cfg._broker = _resolve_broker(broker)
+        path = _config_path(broker)
+        # 브로커별 파일이 없으면 레거시(bot_config.json)에서 1회 마이그레이션 읽기
+        src = path if path.exists() else _LEGACY_CONFIG_PATH
+        if src.exists():
+            data = json.loads(src.read_text(encoding="utf-8"))
             for k, v in data.items():
                 if hasattr(cfg, k):
                     setattr(cfg, k, v)
         return cfg
 
     def save(self) -> None:
-        _CONFIG_PATH.write_text(
+        _config_path(getattr(self, "_broker", None)).write_text(
             json.dumps(asdict(self), ensure_ascii=False, indent=2), encoding="utf-8"
         )
 

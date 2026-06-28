@@ -149,7 +149,11 @@ class KiwoomBroker(Broker):
             s = s.strip()
             if not s:
                 continue
-            p = self.get_price(s)
+            # 한 종목이 실패(429/일시오류)해도 나머지는 채운다
+            try:
+                p = self.get_price(s)
+            except Exception:
+                p = None
             if p:
                 out.append(p)
         return out
@@ -157,7 +161,34 @@ class KiwoomBroker(Broker):
     def get_price_limits(self, symbol: str) -> dict: raise NotImplementedError(_TODO)
     def get_candles(self, symbol: str, interval: str = "1d", count: int = 100,
                     before: str | None = None, adjusted: bool = True) -> dict:
-        raise NotImplementedError(_TODO)
+        """ka10081 주식일봉차트조회 → 토스 CandlePage({candles:[...]}) 형태로 정규화.
+        응답 stk_dt_pole_chart_qry 는 최신→과거 순. 필드:
+          dt(YYYYMMDD) open_pric high_pric low_pric cur_prc(종가) trde_qty(거래량).
+        interval 은 일봉만 지원(이 TR이 일봉 전용)."""
+        if interval != "1d":
+            raise NotImplementedError("키움 get_candles 는 일봉(1d)만 지원합니다.")
+        # base_dt(필수)= before 가 있으면 그 날짜, 없으면 오늘. YYYYMMDD 로 정규화.
+        base_dt = (before or datetime.now().strftime("%Y%m%d")).replace("-", "")[:8]
+        data = self._request(
+            "ka10081", "/api/dostk/chart",
+            body={"stk_cd": symbol, "base_dt": base_dt,
+                  "upd_stkpc_tp": "1" if adjusted else "0"},
+        )
+        rows = data.get("stk_dt_pole_chart_qry", []) or []
+        candles = []
+        for it in rows[:max(0, count)]:
+            dt = str(it.get("dt") or "").strip()
+            if len(dt) != 8:
+                continue
+            candles.append({
+                "timestamp": f"{dt[0:4]}-{dt[4:6]}-{dt[6:8]}",
+                "openPrice": _absnum(it.get("open_pric")),
+                "highPrice": _absnum(it.get("high_pric")),
+                "lowPrice": _absnum(it.get("low_pric")),
+                "closePrice": _absnum(it.get("cur_prc")),
+                "volume": _i(it.get("trde_qty")),
+            })
+        return {"candles": candles}
     def get_stocks(self, symbols: str | Iterable[str]) -> list[dict]: raise NotImplementedError(_TODO)
     def get_exchange_rate(self, base_currency: str = "USD", quote_currency: str = "KRW",
                           date_time: str | None = None) -> dict: raise NotImplementedError(_TODO)
@@ -221,7 +252,16 @@ class KiwoomBroker(Broker):
             "items": items,
         }
     def get_buying_power(self, currency: str = "KRW", account_seq: int | None = None) -> dict:
-        raise NotImplementedError(_TODO)
+        """kt00001 예수금상세현황요청 → 토스 BuyingPower 형태.
+        ord_alow_amt=주문가능금액(매수가능), pymn_alow_amt=출금가능. (0패딩 문자열)"""
+        data = self._request("kt00001", "/api/dostk/acnt", body={"qry_tp": "3"})
+        cash = _i(data.get("ord_alow_amt"))
+        return {
+            "currency": "KRW",
+            "cashBuyingPower": cash,
+            "orderableAmount": cash,
+            "withdrawableAmount": _i(data.get("pymn_alow_amt")),
+        }
     def get_sellable_quantity(self, symbol: str, account_seq: int | None = None) -> dict:
         raise NotImplementedError(_TODO)
     def get_commissions(self, account_seq: int | None = None) -> list[dict]: raise NotImplementedError(_TODO)

@@ -5,7 +5,7 @@ import type { BacktestResult } from './types'
 
 const fmt = (v: number) => Math.round(v).toLocaleString()
 
-export default function Backtest({ symbol, name }: { symbol: string; name?: string }) {
+export default function Backtest({ symbol, name, broker }: { symbol: string; name?: string; broker?: string }) {
   const [days, setDays] = useState(120)
   const [discount, setDiscount] = useState(0.5) // %
   const [fallback, setFallback] = useState(5)
@@ -18,7 +18,7 @@ export default function Backtest({ symbol, name }: { symbol: string; name?: stri
     setBusy(true)
     setErr('')
     try {
-      setRes(await api.botBacktest(symbol, days, discount / 100, fallback, commission / 100))
+      setRes(await api.botBacktest(symbol, days, discount / 100, fallback, commission / 100, broker))
     } catch (e) {
       setErr(String(e instanceof Error ? e.message : e))
     } finally {

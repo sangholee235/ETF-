@@ -6,14 +6,14 @@ from fastapi import APIRouter, Depends, Query
 
 from tossapi import TossClient, TossApiError
 
-from ..deps import get_client, to_http
+from ..deps import client_dep, to_http
 
 router = APIRouter(prefix="/api/market", tags=["market"])
 
 
 @router.get("/prices")
 def prices(symbols: str = Query(..., description="콤마 구분 심볼"),
-           client: TossClient = Depends(get_client)):
+           client: TossClient = Depends(client_dep)):
     try:
         return client.get_prices(symbols)
     except TossApiError as e:
@@ -21,7 +21,7 @@ def prices(symbols: str = Query(..., description="콤마 구분 심볼"),
 
 
 @router.get("/orderbook")
-def orderbook(symbol: str, client: TossClient = Depends(get_client)):
+def orderbook(symbol: str, client: TossClient = Depends(client_dep)):
     try:
         return client.get_orderbook(symbol)
     except TossApiError as e:
@@ -29,7 +29,7 @@ def orderbook(symbol: str, client: TossClient = Depends(get_client)):
 
 
 @router.get("/trades")
-def trades(symbol: str, count: int = 50, client: TossClient = Depends(get_client)):
+def trades(symbol: str, count: int = 50, client: TossClient = Depends(client_dep)):
     try:
         return client.get_trades(symbol, count)
     except TossApiError as e:
@@ -39,7 +39,7 @@ def trades(symbol: str, count: int = 50, client: TossClient = Depends(get_client
 @router.get("/candles")
 def candles(symbol: str, interval: str = "1d", count: int = 100,
             before: str | None = None, adjusted: bool = True,
-            client: TossClient = Depends(get_client)):
+            client: TossClient = Depends(client_dep)):
     try:
         return client.get_candles(symbol, interval, count, before, adjusted)
     except TossApiError as e:
@@ -47,7 +47,7 @@ def candles(symbol: str, interval: str = "1d", count: int = 100,
 
 
 @router.get("/stocks")
-def stocks(symbols: str, client: TossClient = Depends(get_client)):
+def stocks(symbols: str, client: TossClient = Depends(client_dep)):
     try:
         return client.get_stocks(symbols)
     except TossApiError as e:
@@ -55,7 +55,7 @@ def stocks(symbols: str, client: TossClient = Depends(get_client)):
 
 
 @router.get("/price-limits")
-def price_limits(symbol: str, client: TossClient = Depends(get_client)):
+def price_limits(symbol: str, client: TossClient = Depends(client_dep)):
     try:
         return client.get_price_limits(symbol)
     except TossApiError as e:
@@ -63,7 +63,7 @@ def price_limits(symbol: str, client: TossClient = Depends(get_client)):
 
 
 @router.get("/ranking")
-def ranking(client: TossClient = Depends(get_client)):
+def ranking(client: TossClient = Depends(client_dep)):
     """주요 종목 랭킹 (등락률·거래량). 큐레이션 유니버스 기반, 60초 캐시."""
     from ..market_ranking import get_ranking
     try:
@@ -73,7 +73,7 @@ def ranking(client: TossClient = Depends(get_client)):
 
 
 @router.get("/market-summary")
-def market_summary(client: TossClient = Depends(get_client)):
+def market_summary(client: TossClient = Depends(client_dep)):
     """상단 지수 바 (지수 ETF 프록시 + 미니 스파크라인). 60초 캐시."""
     from ..market_ranking import get_market_summary
     try:
@@ -84,7 +84,7 @@ def market_summary(client: TossClient = Depends(get_client)):
 
 @router.get("/exchange-rate")
 def exchange_rate(base: str = "USD", quote: str = "KRW",
-                  client: TossClient = Depends(get_client)):
+                  client: TossClient = Depends(client_dep)):
     try:
         return client.get_exchange_rate(base, quote)
     except TossApiError as e:

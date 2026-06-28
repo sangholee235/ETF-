@@ -17,21 +17,24 @@ from .runner import run_once
 _KST = timezone(timedelta(hours=9))
 _thread: threading.Thread | None = None
 _stop = threading.Event()
-_last_fired_minute: str | None = None
+_last_fired: dict[str, str] = {}  # broker -> "broker YYYY-MM-DD HH:MM"
 
 
 def _loop() -> None:
-    global _last_fired_minute
     while not _stop.is_set():
         try:
-            cfg = BotConfig.load()
-            if cfg.schedule_enabled and cfg.enabled:
-                now = datetime.now(_KST)
-                hhmm = now.strftime("%H:%M")
-                weekday = now.weekday() < 5  # 월~금
-                if weekday and hhmm == cfg.schedule_time and _last_fired_minute != _stamp(now):
-                    _last_fired_minute = _stamp(now)
-                    run_once()
+            from brokers import available_brokers
+            now = datetime.now(_KST)
+            hhmm = now.strftime("%H:%M")
+            weekday = now.weekday() < 5  # 월~금
+            for broker in available_brokers():
+                cfg = BotConfig.load(broker)
+                if not (cfg.schedule_enabled and cfg.enabled):
+                    continue
+                key = f"{broker} {_stamp(now)}"  # 브로커별로 분당 1회만
+                if weekday and hhmm == cfg.schedule_time and _last_fired.get(broker) != key:
+                    _last_fired[broker] = key
+                    run_once(broker=broker)
         except Exception:  # 스케줄러는 죽지 않게 모든 예외 흡수
             pass
         _stop.wait(30)  # 30초마다 점검

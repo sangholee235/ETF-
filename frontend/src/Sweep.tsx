@@ -4,7 +4,7 @@ import type { SweepResult } from './types'
 
 const fmt = (v: number) => Math.round(v).toLocaleString()
 
-export default function Sweep({ symbol, name, days }: { symbol: string; name?: string; days: number }) {
+export default function Sweep({ symbol, name, days, broker }: { symbol: string; name?: string; days: number; broker?: string }) {
   const [res, setRes] = useState<SweepResult | null>(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
@@ -13,7 +13,7 @@ export default function Sweep({ symbol, name, days }: { symbol: string; name?: s
     setBusy(true)
     setErr('')
     try {
-      setRes(await api.botSweep(symbol, days, 0.00015)) // 국내 ETF 0.015% 수수료 반영
+      setRes(await api.botSweep(symbol, days, 0.00015, broker)) // 국내 ETF 0.015% 수수료 반영
     } catch (e) {
       setErr(String(e instanceof Error ? e.message : e))
     } finally {

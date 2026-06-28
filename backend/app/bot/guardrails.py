@@ -16,8 +16,10 @@ class GuardResult:
     reason: str = ""
 
 
-def check(client: TossClient, cfg: BotConfig, state: BotState, est_cost: int) -> GuardResult:
-    """매수 직전 검증. ok=False 면 주문 차단."""
+def check(client: TossClient, cfg: BotConfig, state: BotState, est_cost: int,
+          buying_power: int | None = None) -> GuardResult:
+    """매수 직전 검증. ok=False 면 주문 차단.
+    buying_power 를 미리 넘기면 매수가능금액을 중복 조회하지 않는다(미리보기용)."""
 
     if not cfg.enabled:
         return GuardResult(False, "봇이 비활성(킬스위치) 상태")
@@ -44,26 +46,31 @@ def check(client: TossClient, cfg: BotConfig, state: BotState, est_cost: int) ->
         return GuardResult(False, "장 운영시간 아님")
 
     # 매수가능금액 (DRY_RUN 이어도 실제 잔고로 검증)
-    try:
-        bp = client.get_buying_power("KRW")
-        if int(float(bp["cashBuyingPower"])) < est_cost:
-            return GuardResult(
-                False, f"매수가능금액 부족 ({bp['cashBuyingPower']} < {est_cost})"
-            )
-    except TossApiError as e:
-        return GuardResult(False, f"매수가능금액 조회 실패: {e.code}")
+    if buying_power is None:
+        try:
+            bp = client.get_buying_power("KRW")
+            buying_power = int(float(bp["cashBuyingPower"]))
+        except TossApiError as e:
+            return GuardResult(False, f"매수가능금액 조회 실패: {e.code}")
+        except Exception as e:  # 브로커 미구현/일시오류 → 500 대신 차단 사유로
+            return GuardResult(False, f"매수가능금액 조회 실패: {e}")
+    if buying_power < est_cost:
+        return GuardResult(False, f"매수가능금액 부족 ({buying_power} < {est_cost})")
 
     return GuardResult(True)
 
 
 def _is_market_open(client: TossClient) -> bool:
-    """국내 통합장(정규장) 운영 중인지. 조회 실패 시 보수적으로 False."""
+    """국내 통합장(정규장) 운영 중인지.
+    캘린더 TR 미지원(키움 등)이면 KST 평일 09:00~15:30 기준으로 폴백."""
     from datetime import datetime, timezone, timedelta
 
     try:
         cal = client.get_kr_market_calendar()
     except TossApiError:
         return False
+    except Exception:  # 브로커가 캘린더 미지원 → 시간대 폴백
+        return _market_open_by_clock()
     today = cal.get("today", {})
     integrated = today.get("integrated")
     if not integrated:
@@ -78,3 +85,14 @@ def _is_market_open(client: TossClient) -> bool:
     except (KeyError, ValueError):
         return False
     return start <= now <= end
+
+
+def _market_open_by_clock() -> bool:
+    """캘린더 없이 시각만으로 정규장 추정: KST 평일 09:00~15:30."""
+    from datetime import datetime, timezone, timedelta
+
+    now = datetime.now(timezone(timedelta(hours=9)))
+    if now.weekday() >= 5:  # 토/일
+        return False
+    minutes = now.hour * 60 + now.minute
+    return 9 * 60 <= minutes <= 15 * 60 + 30

@@ -20,26 +20,25 @@ from .state import BotState
 from .strategy import decide
 
 
-def run_once(client: TossClient | None = None) -> dict:
+def run_once(client: TossClient | None = None, broker: str | None = None) -> dict:
     from brokers import get_broker
-    cfg = BotConfig.load()
-    state = BotState.load()
-    client = client or get_broker()
+    cfg = BotConfig.load(broker)
+    state = BotState.load(broker)
+    client = client or get_broker(broker)
 
     # 1. 직전 주문 체결 확인 (LIVE)
     executor.confirm_previous_fill(client, cfg, state)
 
-    # 2. 대상 종목 선택 (포트폴리오 모드면 가장 부족한 ETF)
-    target_symbol = None
-    if cfg.portfolio_mode:
-        from .portfolio import select_underweight
-        pick = select_underweight(cfg, state)
-        if pick is None:
-            log = executor.execute(client, cfg, state, _skip(_blank(), "포트폴리오가 비어 있음"))
-            state.add_log(log)
-            state.save()
-            return _summary(cfg, state, log)
-        target_symbol = pick[0]
+    # 2. 대상 종목 선택 — 목표 비중 대비 가장 부족한 ETF (단일 종목도 100% 1개로 표현)
+    from .portfolio import select_underweight
+    pick = select_underweight(cfg, state)
+    if pick is None:
+        log = executor.execute(client, cfg, state,
+                               _skip(_blank(), "적립할 ETF가 없음 — ETF와 목표비중을 추가하세요"))
+        state.add_log(log)
+        state.save()
+        return _summary(cfg, state, log)
+    target_symbol = pick[0]
 
     # 3. 전략 결정
     d = decide(client, cfg, state, symbol=target_symbol)

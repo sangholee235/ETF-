@@ -9,14 +9,14 @@ from fastapi import APIRouter, Depends
 
 from tossapi import TossClient, TossApiError
 
-from ..deps import get_client, to_http
+from ..deps import client_dep, to_http
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
 
 
 @router.get("")
 def list_orders(status: str = "OPEN", symbol: str | None = None,
-                client: TossClient = Depends(get_client)):
+                client: TossClient = Depends(client_dep)):
     try:
         return client.get_orders(status=status, symbol=symbol)
     except TossApiError as e:
@@ -24,7 +24,7 @@ def list_orders(status: str = "OPEN", symbol: str | None = None,
 
 
 @router.get("/{order_id}")
-def get_order(order_id: str, client: TossClient = Depends(get_client)):
+def get_order(order_id: str, client: TossClient = Depends(client_dep)):
     try:
         return client.get_order(order_id)
     except TossApiError as e:
@@ -37,5 +37,5 @@ def get_order(order_id: str, client: TossClient = Depends(get_client)):
 #     symbol: str; side: str; orderType: str = "LIMIT"
 #     quantity: str | None = None; price: str | None = None
 # @router.post("")
-# def create_order(body: CreateOrderBody, client: TossClient = Depends(get_client)):
+# def create_order(body: CreateOrderBody, client: TossClient = Depends(client_dep)):
 #     ...

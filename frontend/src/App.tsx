@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, loadQuotes } from './api'
 import type { Account, BuyingPower, Holdings, Order, Quote } from './types'
+import AutoPage from './AutoPage'
 import BotPanel from './BotPanel'
 import Chart from './Chart'
 import HoldingsDonut from './HoldingsDonut'
@@ -16,13 +17,14 @@ const signClass = (v: string | null | undefined) =>
   v == null ? '' : Number(v) >= 0 ? 'up' : 'down'
 
 export default function App() {
-  const initialTab = (['rank', 'bot', 'logs'].includes(location.hash.slice(1))
+  type Tab = 'auto' | 'view' | 'rank' | 'bot' | 'logs'
+  const initialTab = (['view', 'rank', 'bot', 'logs'].includes(location.hash.slice(1))
     ? location.hash.slice(1)
-    : 'view') as 'view' | 'rank' | 'bot' | 'logs'
-  const [tab, setTabState] = useState<'view' | 'rank' | 'bot' | 'logs'>(initialTab)
-  const setTab = (t: 'view' | 'rank' | 'bot' | 'logs') => {
+    : 'auto') as Tab
+  const [tab, setTabState] = useState<Tab>(initialTab)
+  const setTab = (t: Tab) => {
     setTabState(t)
-    history.replaceState(null, '', t === 'view' ? location.pathname : `#${t}`)
+    history.replaceState(null, '', t === 'auto' ? location.pathname : `#${t}`)
   }
   // 기본 워치리스트: 지수 ETF (KODEX200·미국S&P500·나스닥100·코스닥150)
   const DEFAULT_SYMBOLS = '069500,360750,133690,229200'
@@ -102,6 +104,7 @@ export default function App() {
           <span className="brand-name">toss<b>invest</b></span>
         </div>
         <nav className="top-tabs">
+          <button className={`tab ${tab === 'auto' ? 'on' : ''}`} onClick={() => setTab('auto')}>적립</button>
           <button className={`tab ${tab === 'view' ? 'on' : ''}`} onClick={() => setTab('view')}>조회</button>
           <button className={`tab ${tab === 'rank' ? 'on' : ''}`} onClick={() => setTab('rank')}>랭킹</button>
           <button className={`tab ${tab === 'bot' ? 'on' : ''}`} onClick={() => setTab('bot')}>적립봇</button>
@@ -114,7 +117,9 @@ export default function App() {
         <span className="muted" style={{ fontSize: 12 }}>{tab === 'view' ? status : ''}</span>
       </header>
 
-      {tab === 'bot' ? (
+      {tab === 'auto' ? (
+        <main className="single"><AutoPage /></main>
+      ) : tab === 'bot' ? (
         <main className="single"><BotPanel /></main>
       ) : tab === 'logs' ? (
         <main className="view-grid"><LogsPanel /></main>
@@ -267,6 +272,9 @@ export default function App() {
       )}
 
       <nav className="bottom-nav">
+        <button className={tab === 'auto' ? 'on' : ''} onClick={() => setTab('auto')}>
+          <span className="ico">💰</span>적립
+        </button>
         <button className={tab === 'view' ? 'on' : ''} onClick={() => setTab('view')}>
           <span className="ico">📊</span>조회
         </button>

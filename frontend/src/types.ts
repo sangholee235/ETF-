@@ -91,6 +91,34 @@ export interface BotConfig {
   enabled: boolean
 }
 
+export interface PortfolioProgress {
+  symbol: string
+  name: string
+  targetWeight: number   // 0~1
+  currentWeight: number  // 0~1 (누적 투입 기준)
+  investedKrw: number
+}
+
+export interface BotPreview {
+  dryRun: boolean
+  enabled: boolean
+  dailyBudgetKrw: number
+  progress: PortfolioProgress[]
+  hasTarget: boolean
+  reason?: string                 // hasTarget=false 일 때
+  symbol?: string
+  name?: string
+  action?: 'LIMIT_BUY' | 'MARKET_BUY' | 'SKIP'
+  quantity?: number
+  price?: number | null           // 지정가 (시장가면 null)
+  estCost?: number
+  decisionReason?: string
+  willTrade?: boolean
+  blockReason?: string | null
+  cashBuyingPower?: number | null
+  warnings?: string[]
+}
+
 export interface BotLog {
   ts: string
   trade_date: string

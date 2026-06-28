@@ -3,6 +3,7 @@ import type {
   BacktestResult,
   BotConfig,
   BotLog,
+  BotPreview,
   BotStatus,
   BuyingPower,
   CandlePage,
@@ -57,33 +58,43 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
   return res.json() as Promise<T>
 }
 
+/** ?broker= / &broker= 접미사. broker 미지정 시 빈 문자열(서버가 .env BROKER 사용). */
+const bq = (broker?: string, sep: '?' | '&' = '&') =>
+  broker ? `${sep}broker=${broker}` : ''
+
 export const api = {
-  accounts: () => get<Account[]>('/api/account/accounts'),
-  prices: (symbols: string) => get<Price[]>(`/api/market/prices?symbols=${encodeURIComponent(symbols)}`),
-  stocks: (symbols: string) => get<StockInfo[]>(`/api/market/stocks?symbols=${encodeURIComponent(symbols)}`),
-  orderbook: (symbol: string) => get<Orderbook>(`/api/market/orderbook?symbol=${symbol}`),
-  candles: (symbol: string, interval: string, count = 100) =>
-    get<CandlePage>(`/api/market/candles?symbol=${symbol}&interval=${interval}&count=${count}`),
+  brokers: () => get<{ brokers: string[]; default: string }>('/api/bot/brokers'),
+  accounts: (broker?: string) => get<Account[]>(`/api/account/accounts${bq(broker, '?')}`),
+  prices: (symbols: string, broker?: string) =>
+    get<Price[]>(`/api/market/prices?symbols=${encodeURIComponent(symbols)}${bq(broker)}`),
+  stocks: (symbols: string, broker?: string) =>
+    get<StockInfo[]>(`/api/market/stocks?symbols=${encodeURIComponent(symbols)}${bq(broker)}`),
+  orderbook: (symbol: string, broker?: string) =>
+    get<Orderbook>(`/api/market/orderbook?symbol=${symbol}${bq(broker)}`),
+  candles: (symbol: string, interval: string, count = 100, broker?: string) =>
+    get<CandlePage>(`/api/market/candles?symbol=${symbol}&interval=${interval}&count=${count}${bq(broker)}`),
   exchangeRate: () => get<{ rate: string }>('/api/market/exchange-rate?base=USD&quote=KRW'),
   ranking: () => get<RankItem[]>('/api/market/ranking'),
   marketSummary: () => get<IndexSummary[]>('/api/market/market-summary'),
-  holdings: () => get<Holdings>('/api/account/holdings'),
-  openOrders: () => get<OrdersPage>('/api/orders?status=OPEN'),
-  buyingPower: (currency: string) => get<BuyingPower>(`/api/account/buying-power?currency=${currency}`),
+  holdings: (broker?: string) => get<Holdings>(`/api/account/holdings${bq(broker, '?')}`),
+  openOrders: (broker?: string) => get<OrdersPage>(`/api/orders?status=OPEN${bq(broker)}`),
+  buyingPower: (currency: string, broker?: string) =>
+    get<BuyingPower>(`/api/account/buying-power?currency=${currency}${bq(broker)}`),
 
-  // --- 적립봇 ---
-  botStatus: () => get<BotStatus>('/api/bot/status'),
-  botCatalog: () => get<EtfCatalogItem[]>('/api/bot/catalog'),
-  botRun: () => req<Record<string, unknown>>('POST', '/api/bot/run'),
-  botPatchConfig: (patch: Partial<BotConfig>) =>
-    req<BotConfig>('PATCH', '/api/bot/config', patch),
-  botLogs: (limit = 200) => get<BotLog[]>(`/api/bot/logs?limit=${limit}`),
-  botBacktest: (symbol: string, days: number, discountPct: number, fallback: number, commissionPct = 0) =>
+  // --- 적립봇 (broker 미지정 시 .env 기본) ---
+  botStatus: (broker?: string) => get<BotStatus>(`/api/bot/status${bq(broker, '?')}`),
+  botPreview: (broker?: string) => get<BotPreview>(`/api/bot/preview${bq(broker, '?')}`),
+  botCatalog: (broker?: string) => get<EtfCatalogItem[]>(`/api/bot/catalog${bq(broker, '?')}`),
+  botRun: (broker?: string) => req<Record<string, unknown>>('POST', `/api/bot/run${bq(broker, '?')}`),
+  botPatchConfig: (patch: Partial<BotConfig>, broker?: string) =>
+    req<BotConfig>('PATCH', `/api/bot/config${bq(broker, '?')}`, patch),
+  botLogs: (limit = 200, broker?: string) => get<BotLog[]>(`/api/bot/logs?limit=${limit}${bq(broker)}`),
+  botBacktest: (symbol: string, days: number, discountPct: number, fallback: number, commissionPct = 0, broker?: string) =>
     get<BacktestResult>(
-      `/api/bot/backtest?symbol=${symbol}&days=${days}&discount_pct=${discountPct}&fallback_after_misses=${fallback}&commission_pct=${commissionPct}`,
+      `/api/bot/backtest?symbol=${symbol}&days=${days}&discount_pct=${discountPct}&fallback_after_misses=${fallback}&commission_pct=${commissionPct}${bq(broker)}`,
     ),
-  botSweep: (symbol: string, days: number, commissionPct = 0) =>
-    get<SweepResult>(`/api/bot/backtest/sweep?symbol=${symbol}&days=${days}&commission_pct=${commissionPct}`),
+  botSweep: (symbol: string, days: number, commissionPct = 0, broker?: string) =>
+    get<SweepResult>(`/api/bot/backtest/sweep?symbol=${symbol}&days=${days}&commission_pct=${commissionPct}${bq(broker)}`),
 }
 
 /** 대시보드용 통합 조회: 시세 + 종목명 + 호가1단계 묶음 */

@@ -24,9 +24,16 @@ def _load_env() -> None:
             load_dotenv(env_path)
 
 
-def get_broker() -> Broker:
+def default_broker() -> str:
+    """기본 브로커 이름 (.env BROKER, 없으면 toss)."""
     _load_env()
-    name = os.getenv("BROKER", "toss").lower()
+    return os.getenv("BROKER", "toss").lower()
+
+
+def get_broker(name: str | None = None) -> Broker:
+    """브로커 인스턴스. name 미지정 시 .env BROKER 사용."""
+    _load_env()
+    name = (name or os.getenv("BROKER", "toss")).lower()
     if name == "kiwoom":
         from .kiwoom import KiwoomBroker
         return KiwoomBroker()
@@ -34,4 +41,15 @@ def get_broker() -> Broker:
     return TossBroker()
 
 
-__all__ = ["Broker", "get_broker"]
+def available_brokers() -> list[str]:
+    """키가 설정된(=동작 가능한) 브로커 목록. 둘 다 있으면 [toss, kiwoom]."""
+    _load_env()
+    out: list[str] = []
+    if os.getenv("TOSS_CLIENT_ID", "").strip() and os.getenv("TOSS_CLIENT_SECRET", "").strip():
+        out.append("toss")
+    if os.getenv("KIWOOM_APP_KEY", "").strip() and os.getenv("KIWOOM_SECRET_KEY", "").strip():
+        out.append("kiwoom")
+    return out or [default_broker()]
+
+
+__all__ = ["Broker", "get_broker", "available_brokers", "default_broker"]
