@@ -189,7 +189,38 @@ class KiwoomBroker(Broker):
                 "volume": _i(it.get("trde_qty")),
             })
         return {"candles": candles}
-    def get_stocks(self, symbols: str | Iterable[str]) -> list[dict]: raise NotImplementedError(_TODO)
+    def get_stock(self, symbol: str) -> dict | None:
+        """ka10001 주식기본정보요청 → 토스 get_stocks 항목 형태로 정규화.
+        stk_nm=종목명, flo_stk=상장주식수(천주 단위라 ×1000)."""
+        data = self._request("ka10001", "/api/dostk/stkinfo", body={"stk_cd": symbol})
+        name = (data.get("stk_nm") or "").strip()
+        if not name:
+            return None
+        flo = _i(data.get("flo_stk"))
+        shares = str(int(flo) * 1000) if flo.lstrip("-").isdigit() else None
+        return {
+            "symbol": symbol,
+            "name": name,
+            "market": "KRX",
+            "currency": "KRW",
+            "sharesOutstanding": shares,
+        }
+
+    def get_stocks(self, symbols: str | Iterable[str]) -> list[dict]:
+        """다건 종목정보. 키움은 단건 TR이라 심볼별로 호출해 합친다."""
+        syms = symbols.split(",") if isinstance(symbols, str) else list(symbols)
+        out: list[dict] = []
+        for s in syms:
+            s = s.strip()
+            if not s:
+                continue
+            try:
+                info = self.get_stock(s)
+            except Exception:
+                info = None
+            if info:
+                out.append(info)
+        return out
     def get_exchange_rate(self, base_currency: str = "USD", quote_currency: str = "KRW",
                           date_time: str | None = None) -> dict: raise NotImplementedError(_TODO)
     def get_kr_market_calendar(self, date: str | None = None) -> dict: raise NotImplementedError(_TODO)
