@@ -24,7 +24,7 @@ export default function AutoPage() {
       .catch(() => {})
   }, [])
 
-  if (!broker) return <section className="card">증권사 불러오는 중...</section>
+  if (!broker) return <LoadingSkeleton />
 
   return (
     <>
@@ -49,12 +49,13 @@ function BrokerView({ broker }: { broker: string }) {
   const [bp, setBp] = useState<BuyingPower | null>(null)
   const [sched, setSched] = useState<Awaited<ReturnType<typeof api.botScheduler>> | null>(null)
   const [openOrders, setOpenOrders] = useState<Order[]>([])
+  const [trades, setTrades] = useState<Order[]>([])
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(async () => {
     try {
-      const [s, h, p, c, a, b, sc, oo] = await Promise.all([
+      const [s, h, p, c, a, b, sc, oo, tr] = await Promise.all([
         api.botStatus(broker),
         api.holdings(broker).catch(() => null),
         api.botPreview(broker).catch(() => null),
@@ -63,9 +64,11 @@ function BrokerView({ broker }: { broker: string }) {
         api.buyingPower('KRW', broker).catch(() => null),
         api.botScheduler().catch(() => null),
         api.openOrders(broker).catch(() => null),
+        api.closedOrders(broker).catch(() => null),
       ])
       setStatus(s); setHoldings(h); setPreview(p); setCatalog(c); setAccount(a); setBp(b); setSched(sc)
       setOpenOrders(oo?.orders ?? [])
+      setTrades(tr?.orders ?? [])
     } catch (e) {
       setMsg(String(e instanceof Error ? e.message : e))
     }
@@ -95,7 +98,8 @@ function BrokerView({ broker }: { broker: string }) {
 
   const cfg = status?.config
   const st = status?.state
-  if (!cfg || !st) return <section className="card">불러오는 중... {msg && <span className="err">{msg}</span>}</section>
+  if (!cfg || !st) return <LoadingSkeleton msg={msg} />
+
 
   return (
     <>
@@ -231,8 +235,71 @@ function BrokerView({ broker }: { broker: string }) {
         </div>
       </section>
 
+      <section className="card span2">
+        <h2>거래내역 (실제 체결) <span className="muted" style={{ fontWeight: 400 }}>· 증권사 체결 기록</span></h2>
+        {trades.length === 0 ? (
+          <p className="muted">체결된 거래 없음</p>
+        ) : (
+          <div className="table-scroll">
+            <table>
+              <thead><tr><th>시각</th><th>종목</th><th>구분</th><th>유형</th><th>체결가</th><th>수량</th><th>체결금액</th><th>상태</th></tr></thead>
+              <tbody>
+                {trades.map((o) => {
+                  const ex = o.execution as Order['execution'] & { filledAmount?: string }
+                  return (
+                    <tr key={o.orderId}>
+                      <td className="muted">{(o as Order & { orderedAt?: string }).orderedAt ?? '-'}</td>
+                      <td>{(o as Order & { name?: string }).name ?? o.symbol} <span className="muted">{o.symbol}</span></td>
+                      <td className={o.side === 'BUY' ? 'up' : 'down'}>{o.side === 'BUY' ? '매수' : '매도'}</td>
+                      <td>{o.orderType === 'LIMIT' ? '지정가' : '시장가'}</td>
+                      <td>{ex.averageFilledPrice ? Number(ex.averageFilledPrice).toLocaleString() : '-'}</td>
+                      <td>{ex.filledQuantity}</td>
+                      <td>{ex.filledAmount ? Number(ex.filledAmount).toLocaleString() : '-'}</td>
+                      <td className="muted">{o.status === 'FILLED' ? '체결' : o.status === 'PARTIAL_FILLED' ? '일부체결' : o.status}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
       {/* 세부 설정 (접기) */}
       <DetailSettings cfg={cfg} onPatch={patch} />
+    </>
+  )
+}
+
+function Skel({ w, h = 16, r = 6 }: { w: number | string; h?: number; r?: number }) {
+  return <span className="skel" style={{ width: w, height: h, borderRadius: r }} />
+}
+
+/** 첫 로딩 시 실제 화면 골격(자산 히어로 → 목표 비중 → 전략 상태)을 스켈레톤으로 표시. */
+function LoadingSkeleton({ msg }: { msg?: string }) {
+  return (
+    <>
+      <section className="card span2 hero">
+        <div className="hero-main">
+          <Skel w={90} h={13} />
+          <div className="hero-amount" style={{ marginTop: 8 }}><Skel w={180} h={30} /></div>
+          <div style={{ marginTop: 8 }}><Skel w={140} h={15} /></div>
+        </div>
+        <div className="hero-sub">
+          {[0, 1, 2].map((i) => (
+            <div className="stat" key={i}><Skel w={64} h={12} /><div style={{ marginTop: 6 }}><Skel w={88} h={18} /></div></div>
+          ))}
+        </div>
+      </section>
+      <section className="card"><Skel w="60%" h={14} /><div style={{ marginTop: 16 }}><Skel w={180} h={180} r={90} /></div></section>
+      <section className="card span2">
+        <Skel w={140} h={18} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 16 }}>
+          {[0, 1, 2].map((i) => <Skel key={i} w="100%" h={44} r={12} />)}
+        </div>
+      </section>
+      <section className="card span2"><Skel w={120} h={18} /><div style={{ marginTop: 14 }}><Skel w="100%" h={64} r={12} /></div></section>
+      {msg && <section className="card span2"><span className="err">{msg}</span></section>}
     </>
   )
 }

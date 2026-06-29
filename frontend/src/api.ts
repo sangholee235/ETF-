@@ -78,6 +78,7 @@ export const api = {
   marketSummary: () => get<IndexSummary[]>('/api/market/market-summary'),
   holdings: (broker?: string) => get<Holdings>(`/api/account/holdings${bq(broker, '?')}`),
   openOrders: (broker?: string) => get<OrdersPage>(`/api/orders?status=OPEN${bq(broker)}`),
+  closedOrders: (broker?: string) => get<OrdersPage>(`/api/orders?status=CLOSED${bq(broker)}`),
   buyingPower: (currency: string, broker?: string) =>
     get<BuyingPower>(`/api/account/buying-power?currency=${currency}${bq(broker)}`),
 

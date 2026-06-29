@@ -297,10 +297,14 @@ class KiwoomBroker(Broker):
         raise NotImplementedError(_TODO)
     def get_commissions(self, account_seq: int | None = None) -> list[dict]: raise NotImplementedError(_TODO)
     def get_orders(self, status: str = "OPEN", symbol: str | None = None, **kwargs: Any) -> dict:
-        """ka10075 미체결요청 → 토스 PaginatedOrderResponse 형태(미체결=OPEN)로 정규화.
-        status=CLOSED(체결완료)는 별도 TR(ka10076) 필요 → 빈 목록 반환."""
-        if status.upper() != "OPEN":
-            return {"orders": [], "nextCursor": None, "hasNext": False}
+        """ka10075 미체결요청(OPEN) / ka10076 체결요청(CLOSED·ALL) → 토스 형태로 정규화."""
+        if status.upper() in ("CLOSED", "ALL", "FILLED"):
+            closed = self._closed_orders(symbol)
+            if status.upper() != "ALL":
+                return {"orders": closed, "nextCursor": None, "hasNext": False}
+            # ALL = 체결 + 미체결
+            open_orders = self.get_orders("OPEN", symbol).get("orders") or []
+            return {"orders": closed + open_orders, "nextCursor": None, "hasNext": False}
         body = {
             "all_stk_tp": "1" if symbol else "0",
             "trde_tp": "0",                    # 0:전체
@@ -333,6 +337,54 @@ class KiwoomBroker(Broker):
                 },
             })
         return {"orders": orders, "nextCursor": None, "hasNext": False}
+    def _fetch_cntr(self, symbol: str | None = None) -> list[dict]:
+        """ka10076 체결요청 → 원시 체결행(cntr) 목록."""
+        data = self._request("ka10076", "/api/dostk/acnt", body={
+            "stk_cd": symbol or "", "qry_tp": "0", "sell_tp": "0", "ord_no": "", "stex_tp": "0",
+        })
+        return data.get("cntr") or []
+
+    def _agg_order(self, order_id: str, rows: list[dict]) -> dict:
+        """같은 주문번호(ord_no)의 체결행들을 합산해 토스 Order 형태로 정규화."""
+        filled_qty = sum(int(_i(c.get("cntr_qty"))) for c in rows)
+        amt = sum(int(_i(c.get("cntr_qty"))) * int(_absnum(c.get("cntr_pric"))) for c in rows)
+        avg = (amt / filled_qty) if filled_qty else 0
+        commission = sum(int(_i(c.get("tdy_trde_cmsn"))) for c in rows)
+        tax = sum(int(_i(c.get("tdy_trde_tax"))) for c in rows)
+        head = rows[0]
+        oso = int(_i(head.get("oso_qty")))
+        return {
+            "orderId": order_id,
+            "symbol": head.get("stk_cd"),
+            "name": head.get("stk_nm"),
+            "side": "BUY" if "매수" in head.get("io_tp_nm", "") else "SELL",
+            "orderType": "MARKET" if "시장" in head.get("trde_tp", "") else "LIMIT",
+            "status": "FILLED" if oso == 0 else "PARTIAL_FILLED",
+            "price": _absnum(head.get("ord_pric")),
+            "quantity": _i(head.get("ord_qty")),
+            "currency": "KRW",
+            "orderedAt": head.get("cntr_tm") or head.get("ord_tm") or head.get("tm"),
+            "execution": {
+                "filledQuantity": str(filled_qty),
+                "averageFilledPrice": str(round(avg)),
+                "filledAmount": str(amt),
+                "commission": str(commission),
+                "tax": str(tax),
+            },
+        }
+
+    def _closed_orders(self, symbol: str | None = None) -> list[dict]:
+        """체결 내역을 주문번호별로 묶어 토스 Order 목록으로 정규화 (최신 주문번호 우선)."""
+        groups: dict[str, list[dict]] = {}
+        for c in self._fetch_cntr(symbol):
+            oid = c.get("ord_no")
+            if not oid:
+                continue
+            groups.setdefault(oid, []).append(c)
+        out = [self._agg_order(oid, rows) for oid, rows in groups.items()]
+        out.sort(key=lambda o: o.get("orderId") or "", reverse=True)
+        return out
+
     def get_order(self, order_id: str, account_seq: int | None = None) -> dict:
         """ka10076 체결요청 → 주문번호(order_id)의 체결 내역을 토스 Order 형태로 정규화.
 
@@ -340,36 +392,9 @@ class KiwoomBroker(Broker):
         둘 다 없으면 상태 불명(NOT_FOUND).
         """
         # 1) 체결 내역에서 찾기 (전체 종목 조회 후 ord_no 필터)
-        data = self._request("ka10076", "/api/dostk/acnt", body={
-            "stk_cd": "", "qry_tp": "0", "sell_tp": "0", "ord_no": "", "stex_tp": "0",
-        })
-        rows = [c for c in (data.get("cntr") or []) if c.get("ord_no") == order_id]
+        rows = [c for c in self._fetch_cntr() if c.get("ord_no") == order_id]
         if rows:
-            filled_qty = sum(int(_i(c.get("cntr_qty"))) for c in rows)
-            amt = sum(int(_i(c.get("cntr_qty"))) * int(_absnum(c.get("cntr_pric"))) for c in rows)
-            avg = (amt / filled_qty) if filled_qty else 0
-            commission = sum(int(_i(c.get("tdy_trde_cmsn"))) for c in rows)
-            tax = sum(int(_i(c.get("tdy_trde_tax"))) for c in rows)
-            head = rows[0]
-            oso = int(_i(head.get("oso_qty")))
-            status = "FILLED" if oso == 0 else "PARTIAL_FILLED"
-            return {
-                "orderId": order_id,
-                "symbol": head.get("stk_cd"),
-                "side": "BUY" if "매수" in head.get("io_tp_nm", "") else "SELL",
-                "orderType": "MARKET" if "시장" in head.get("trde_tp", "") else "LIMIT",
-                "status": status,
-                "price": _absnum(head.get("ord_pric")),
-                "quantity": _i(head.get("ord_qty")),
-                "currency": "KRW",
-                "execution": {
-                    "filledQuantity": str(filled_qty),
-                    "averageFilledPrice": str(round(avg)),
-                    "filledAmount": str(amt),
-                    "commission": str(commission),
-                    "tax": str(tax),
-                },
-            }
+            return self._agg_order(order_id, rows)
         # 2) 체결 내역에 없으면 미체결 목록에서 확인
         for o in (self.get_orders("OPEN").get("orders") or []):
             if o.get("orderId") == order_id:
