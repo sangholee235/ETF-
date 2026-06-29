@@ -1,6 +1,7 @@
-# 토스 적립봇 — 원클릭 실행
-#   cp .env.example .env   # 토스 키 입력
-#   docker compose up -d   # → http://localhost:8080
+# autovest — 원클릭 실행
+#   cp .env.example .env   # 토스/키움 키 입력
+#   docker compose up -d   # → http://localhost:8080 (서버 자신만 접근)
+# 외부에서 보려면 SSH 터널 또는 Tailscale 사용 (DEPLOY.md 참고). 절대 0.0.0.0 으로 열지 말 것.
 services:
   backend:
     build: ./backend
@@ -21,7 +22,7 @@ services:
   frontend:
     build: ./frontend
     ports:
-      - "8080:80"            # 대시보드: http://localhost:8080
+      - "127.0.0.1:8080:80"  # 서버 자신만 접근(외부 노출 X). SSH터널/Tailscale로 접속
     depends_on:
       backend:
         condition: service_healthy

@@ -334,7 +334,49 @@ class KiwoomBroker(Broker):
             })
         return {"orders": orders, "nextCursor": None, "hasNext": False}
     def get_order(self, order_id: str, account_seq: int | None = None) -> dict:
-        raise NotImplementedError(_TODO)
+        """ka10076 체결요청 → 주문번호(order_id)의 체결 내역을 토스 Order 형태로 정규화.
+
+        체결 목록(cntr)에서 같은 ord_no 의 체결분을 합산한다. 없으면 미체결(ka10075)에서 찾고,
+        둘 다 없으면 상태 불명(NOT_FOUND).
+        """
+        # 1) 체결 내역에서 찾기 (전체 종목 조회 후 ord_no 필터)
+        data = self._request("ka10076", "/api/dostk/acnt", body={
+            "stk_cd": "", "qry_tp": "0", "sell_tp": "0", "ord_no": "", "stex_tp": "0",
+        })
+        rows = [c for c in (data.get("cntr") or []) if c.get("ord_no") == order_id]
+        if rows:
+            filled_qty = sum(int(_i(c.get("cntr_qty"))) for c in rows)
+            amt = sum(int(_i(c.get("cntr_qty"))) * int(_absnum(c.get("cntr_pric"))) for c in rows)
+            avg = (amt / filled_qty) if filled_qty else 0
+            commission = sum(int(_i(c.get("tdy_trde_cmsn"))) for c in rows)
+            tax = sum(int(_i(c.get("tdy_trde_tax"))) for c in rows)
+            head = rows[0]
+            oso = int(_i(head.get("oso_qty")))
+            status = "FILLED" if oso == 0 else "PARTIAL_FILLED"
+            return {
+                "orderId": order_id,
+                "symbol": head.get("stk_cd"),
+                "side": "BUY" if "매수" in head.get("io_tp_nm", "") else "SELL",
+                "orderType": "MARKET" if "시장" in head.get("trde_tp", "") else "LIMIT",
+                "status": status,
+                "price": _absnum(head.get("ord_pric")),
+                "quantity": _i(head.get("ord_qty")),
+                "currency": "KRW",
+                "execution": {
+                    "filledQuantity": str(filled_qty),
+                    "averageFilledPrice": str(round(avg)),
+                    "filledAmount": str(amt),
+                    "commission": str(commission),
+                    "tax": str(tax),
+                },
+            }
+        # 2) 체결 내역에 없으면 미체결 목록에서 확인
+        for o in (self.get_orders("OPEN").get("orders") or []):
+            if o.get("orderId") == order_id:
+                return o
+        # 3) 둘 다 없음
+        return {"orderId": order_id, "status": "NOT_FOUND",
+                "execution": {"filledQuantity": "0", "averageFilledPrice": None}}
     def create_order(self, symbol: str, side: str, order_type: str = "LIMIT", **kwargs: Any) -> dict:
         """kt10000 주식 매수주문 → 토스 OrderResponse({orderId, clientOrderId}) 형태.
 
