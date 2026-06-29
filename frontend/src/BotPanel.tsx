@@ -112,7 +112,7 @@ export default function BotPanel({ broker, focused }: { broker?: string; focused
       <NextBuyCard preview={preview} dryRun={cfg.dry_run} onRun={runTick} busy={busy} />
 
       <PortfolioPanel cfg={cfg} catalog={catalog} onPatch={patch} busy={busy}
-                      progress={preview?.progress} />
+                      progress={preview?.progress} waterfall={preview?.waterfall} />
 
       <section className="card">
         <h2>전략 / 한도</h2>

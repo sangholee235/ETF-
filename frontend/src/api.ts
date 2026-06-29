@@ -82,6 +82,7 @@ export const api = {
     get<BuyingPower>(`/api/account/buying-power?currency=${currency}${bq(broker)}`),
 
   // --- 적립봇 (broker 미지정 시 .env 기본) ---
+  botScheduler: () => get<{ alive: boolean; threadAlive: boolean; lastTick: string | null; secondsSinceTick: number | null }>('/api/bot/scheduler'),
   botStatus: (broker?: string) => get<BotStatus>(`/api/bot/status${bq(broker, '?')}`),
   botPreview: (broker?: string) => get<BotPreview>(`/api/bot/preview${bq(broker, '?')}`),
   botCatalog: (broker?: string) => get<EtfCatalogItem[]>(`/api/bot/catalog${bq(broker, '?')}`),

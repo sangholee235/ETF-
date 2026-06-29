@@ -13,6 +13,7 @@ MAJOR_ETFS: list[dict] = [
     {"symbol": "360750", "name": "TIGER 미국S&P500", "category": "미국지수", "tax": "taxed"},
     {"symbol": "379800", "name": "KODEX 미국S&P500", "category": "미국지수", "tax": "taxed"},
     {"symbol": "133690", "name": "TIGER 미국나스닥100", "category": "미국지수", "tax": "taxed"},
+    {"symbol": "379810", "name": "KODEX 미국나스닥100", "category": "미국지수", "tax": "taxed"},
     {"symbol": "381180", "name": "TIGER 미국필라델피아반도체나스닥", "category": "테마", "tax": "taxed"},
     {"symbol": "449180", "name": "TIGER 미국배당다우존스", "category": "배당", "tax": "taxed"},
 ]

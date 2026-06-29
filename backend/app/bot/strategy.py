@@ -24,28 +24,37 @@ class Decision:
 
 
 def decide(client: TossClient, cfg: BotConfig, state: BotState,
-           symbol: str | None = None) -> Decision:
-    qty = cfg.quantity_per_buy
+           symbol: str | None = None, max_spend: int | None = None) -> Decision:
+    """하루 적립 금액(daily_budget_krw) 안에서 살 수 있는 만큼 매수.
+    max_spend(매수가능금액)가 있으면 둘 중 작은 금액으로 한도."""
     sym = symbol or cfg.symbol
 
     ref_price = _reference_price(client, sym)
-    if ref_price is None:
+    if ref_price is None or ref_price <= 0:
         return Decision("SKIP", 0, None, "기준가 조회 실패", 0, sym)
+
+    cap = cfg.daily_budget_krw
+    if max_spend is not None:
+        cap = min(cap, max_spend)
+    qty = int(cap // ref_price)
+    if qty < 1:
+        return Decision("SKIP", 0, None,
+                        f"하루 적립 금액/현금({cap:,}원)으로 1주({ref_price:,}원)도 못 삽니다", 0, sym)
 
     # N일 연속 미체결 -> 시장가로 강제 매수 (상승장 누락 방지)
     if state.consecutive_misses >= cfg.fallback_after_misses:
         est = ref_price * qty
         return Decision(
             "MARKET_BUY", qty, None,
-            f"{state.consecutive_misses}일 연속 미체결 -> 시장가 적립", est, sym,
+            f"{state.consecutive_misses}일 연속 미체결 -> 시장가 {qty}주 적립", est, sym,
         )
 
-    # 평소: 전일종가 -discount% 아래 지정가
+    # 평소: 전일종가 -discount% 아래 지정가, 하루 금액 안에서 살 수 있는 만큼
     limit = round_to_tick(ref_price * (1 - cfg.discount_pct), cfg.tick_size)
     est = limit * qty
     return Decision(
         "LIMIT_BUY", qty, limit,
-        f"기준가 {ref_price} 대비 -{cfg.discount_pct*100:.1f}% = {limit} 지정가", est, sym,
+        f"기준가 {ref_price} 대비 -{cfg.discount_pct*100:.1f}% = {limit} 지정가 {qty}주", est, sym,
     )
 
 

@@ -101,14 +101,16 @@ export default function App() {
               <circle cx="50" cy="20" r="5" fill="#fff" />
             </svg>
           </span>
-          <span className="brand-name">toss<b>invest</b></span>
+          <span className="brand-name">auto<b>vest</b></span>
         </div>
         <nav className="top-tabs">
           <button className={`tab ${tab === 'auto' ? 'on' : ''}`} onClick={() => setTab('auto')}>적립</button>
+          {/* 나머지 탭은 잠시 숨김 (파일/코드는 유지 — 되살리려면 주석 해제)
           <button className={`tab ${tab === 'view' ? 'on' : ''}`} onClick={() => setTab('view')}>조회</button>
           <button className={`tab ${tab === 'rank' ? 'on' : ''}`} onClick={() => setTab('rank')}>랭킹</button>
           <button className={`tab ${tab === 'bot' ? 'on' : ''}`} onClick={() => setTab('bot')}>적립봇</button>
           <button className={`tab ${tab === 'logs' ? 'on' : ''}`} onClick={() => setTab('logs')}>로그</button>
+          */}
         </nav>
         <span className="conn spacer" title={connected ? '백엔드 연결됨' : '백엔드 연결 끊김'}>
           <span className={`dot ${connected ? 'ok' : 'bad'}`} />
@@ -275,6 +277,7 @@ export default function App() {
         <button className={tab === 'auto' ? 'on' : ''} onClick={() => setTab('auto')}>
           <span className="ico">💰</span>적립
         </button>
+        {/* 나머지 탭 잠시 숨김 (되살리려면 주석 해제)
         <button className={tab === 'view' ? 'on' : ''} onClick={() => setTab('view')}>
           <span className="ico">📊</span>조회
         </button>
@@ -287,6 +290,7 @@ export default function App() {
         <button className={tab === 'logs' ? 'on' : ''} onClick={() => setTab('logs')}>
           <span className="ico">📜</span>로그
         </button>
+        */}
       </nav>
     </div>
   )

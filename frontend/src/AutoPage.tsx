@@ -1,28 +1,26 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from './api'
-import BotPanel from './BotPanel'
-import type { Account, BuyingPower, Holdings } from './types'
+import HoldingsDonut from './HoldingsDonut'
+import PortfolioPanel from './PortfolioPanel'
+import type { Account, BotPreview, BotStatus, BuyingPower, EtfCatalogItem, Holdings, Order } from './types'
 
 const fmt = (v: string | number | null | undefined) =>
   v == null ? '-' : Number(v).toLocaleString()
 const pct = (v: string | null | undefined) =>
   v == null ? '-' : (Number(v) * 100).toFixed(2) + '%'
-const signClass = (v: string | null | undefined) =>
+const sign = (v: string | null | undefined) =>
   v == null ? '' : Number(v) >= 0 ? 'up' : 'down'
 
 const LABEL: Record<string, string> = { toss: '토스증권', kiwoom: '키움증권' }
 
-/** ETF 자동매수 메인 화면: 증권사별(토스/키움)로 나눠 계좌 + 적립봇을 한 곳에서. */
+/** ETF 자동 적립 메인. ①보유 비중 → ②목표 비중 → ③전략 상태 → ④실행 기록 흐름. */
 export default function AutoPage() {
   const [brokers, setBrokers] = useState<string[]>([])
-  const [broker, setBroker] = useState<string>('')
+  const [broker, setBroker] = useState('')
 
   useEffect(() => {
     api.brokers()
-      .then((r) => {
-        setBrokers(r.brokers)
-        setBroker((prev) => prev || r.default || r.brokers[0] || '')
-      })
+      .then((r) => { setBrokers(r.brokers); setBroker((p) => p || r.default || r.brokers[0] || '') })
       .catch(() => {})
   }, [])
 
@@ -30,74 +28,308 @@ export default function AutoPage() {
 
   return (
     <>
-      <section className="card span2" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+      <section className="card span2 broker-bar">
         {brokers.map((b) => (
-          <button key={b} onClick={() => setBroker(b)}
-                  className={broker === b ? 'on' : ''}
-                  style={{ background: broker === b ? '#3182f6' : '#2a2a33' }}>
+          <button key={b} onClick={() => setBroker(b)} className={`broker-btn ${broker === b ? 'on' : ''}`}>
             {LABEL[b] ?? b}
           </button>
         ))}
       </section>
-
-      <AccountHeader broker={broker} />
-      <BotPanel key={broker} broker={broker} focused />
+      <BrokerView key={broker} broker={broker} />
     </>
   )
 }
 
-function AccountHeader({ broker }: { broker: string }) {
-  const [acc, setAcc] = useState<Account | null>(null)
+function BrokerView({ broker }: { broker: string }) {
+  const [status, setStatus] = useState<BotStatus | null>(null)
   const [holdings, setHoldings] = useState<Holdings | null>(null)
+  const [preview, setPreview] = useState<BotPreview | null>(null)
+  const [catalog, setCatalog] = useState<EtfCatalogItem[]>([])
+  const [account, setAccount] = useState<Account | null>(null)
   const [bp, setBp] = useState<BuyingPower | null>(null)
-  const [err, setErr] = useState('')
+  const [sched, setSched] = useState<Awaited<ReturnType<typeof api.botScheduler>> | null>(null)
+  const [openOrders, setOpenOrders] = useState<Order[]>([])
+  const [msg, setMsg] = useState('')
+  const [busy, setBusy] = useState(false)
 
   const load = useCallback(async () => {
-    setErr('')
     try {
-      const [a, h, b] = await Promise.all([
-        api.accounts(broker).then((x) => x[0] ?? null).catch(() => null),
+      const [s, h, p, c, a, b, sc, oo] = await Promise.all([
+        api.botStatus(broker),
         api.holdings(broker).catch(() => null),
+        api.botPreview(broker).catch(() => null),
+        api.botCatalog(broker),
+        api.accounts(broker).then((x) => x[0] ?? null).catch(() => null),
         api.buyingPower('KRW', broker).catch(() => null),
+        api.botScheduler().catch(() => null),
+        api.openOrders(broker).catch(() => null),
       ])
-      setAcc(a)
-      setHoldings(h)
-      setBp(b)
-      if (!a && !h) setErr('계좌 조회 실패 (키 또는 IP 등록 확인)')
+      setStatus(s); setHoldings(h); setPreview(p); setCatalog(c); setAccount(a); setBp(b); setSched(sc)
+      setOpenOrders(oo?.orders ?? [])
     } catch (e) {
-      setErr(String(e instanceof Error ? e.message : e))
+      setMsg(String(e instanceof Error ? e.message : e))
     }
   }, [broker])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    load()
+    const t = setInterval(() => api.botScheduler().then(setSched).catch(() => {}), 15000)
+    return () => clearInterval(t)
+  }, [load])
+
+  async function patch(p: Parameters<typeof api.botPatchConfig>[0]) {
+    setBusy(true); setMsg('')
+    try { await api.botPatchConfig(p, broker); await load() }
+    catch (e) { setMsg(String(e instanceof Error ? e.message : e)) }
+    finally { setBusy(false) }
+  }
+  async function runTick() {
+    setBusy(true); setMsg('실행 중...')
+    try {
+      const r = await api.botRun(broker)
+      const d = (r.decision ?? {}) as { action?: string; reason?: string }
+      setMsg(`결과: ${d.action} — ${d.reason}`); await load()
+    } catch (e) { setMsg(String(e instanceof Error ? e.message : e)) }
+    finally { setBusy(false) }
+  }
+
+  const cfg = status?.config
+  const st = status?.state
+  if (!cfg || !st) return <section className="card">불러오는 중... {msg && <span className="err">{msg}</span>}</section>
 
   return (
-    <section className="card span2 hero">
-      <div className="hero-main">
-        <div className="muted">평가자산 (KRW)</div>
-        <div className="hero-amount">{fmt(holdings?.marketValue.amount.krw)}<span className="won">원</span></div>
-        {holdings && (
-          <div className={`hero-pl ${signClass(holdings.profitLoss.amount.krw)}`}>
-            {Number(holdings.profitLoss.amount.krw) >= 0 ? '▲' : '▼'} {fmt(Math.abs(Number(holdings.profitLoss.amount.krw)))}원
-            {' '}({pct(holdings.profitLoss.rate)})
+    <>
+      {/* ───────── 1. 지금 내 자산 ───────── */}
+      <StepHead n={1} title="지금 내 자산" sub="무엇을 · 얼마 비중으로 갖고 있나" />
+      <section className="card span2 hero">
+        <div className="hero-main">
+          <div className="muted">평가자산 (KRW)</div>
+          <div className="hero-amount">{fmt(holdings?.marketValue.amount.krw)}<span className="won">원</span></div>
+          {holdings && (
+            <div className={`hero-pl ${sign(holdings.profitLoss.amount.krw)}`}>
+              {Number(holdings.profitLoss.amount.krw) >= 0 ? '▲' : '▼'} {fmt(Math.abs(Number(holdings.profitLoss.amount.krw)))}원 ({pct(holdings.profitLoss.rate)})
+            </div>
+          )}
+        </div>
+        <div className="hero-sub">
+          <Stat label="계좌번호" value={account?.accountNo ?? '-'} />
+          <Stat label="매수가능(KRW)" value={fmt(bp?.cashBuyingPower) + '원'} />
+          <Stat label="보유 종목수" value={(holdings?.items.length ?? 0) + '개'} />
+        </div>
+      </section>
+      <HoldingsDonut holdings={holdings} />
+
+      {/* ───────── 2. 내 전략 (목표 비중) ───────── */}
+      <StepHead n={2} title="내 전략 — 목표 비중" sub="어느 비중으로 무엇을 살지 정해서 저장" />
+      <PortfolioPanel cfg={cfg} catalog={catalog} onPatch={patch} busy={busy}
+                      progress={preview?.progress} waterfall={preview?.waterfall} nextSymbol={preview?.symbol} />
+
+      {/* ───────── 3. 전략 상태 ───────── */}
+      <StepHead n={3} title="전략 상태" sub="지금 자동으로 돌아가고 있나" />
+      <section className="card span2 strat">
+        <div className="strat-row">
+          <div className={`strat-led ${cfg.schedule_enabled && cfg.enabled ? 'on' : 'off'}`}>
+            <span className="led-dot" />
+            <div>
+              <div className="led-title">
+                {cfg.enabled
+                  ? cfg.schedule_enabled ? '자동 적립 작동 중' : '자동 OFF (수동 적립만)'
+                  : '봇 정지됨 (킬스위치)'}
+              </div>
+              <div className="muted">
+                {cfg.schedule_enabled
+                  ? `매 평일 ${cfg.schedule_time} 실행 · ${cfg.dry_run ? 'DRY_RUN(모의)' : 'LIVE(실주문)'}`
+                  : `버튼으로만 적립 · ${cfg.dry_run ? 'DRY_RUN(모의)' : 'LIVE(실주문)'}`}
+              </div>
+              <div className="sched-hb">
+                {sched?.alive
+                  ? <span className="up">● 스케줄러 동작 중{sched.secondsSinceTick != null ? ` · ${sched.secondsSinceTick}초 전 점검` : ''}</span>
+                  : <span className="down">● 스케줄러 응답 없음 (백엔드 확인)</span>}
+              </div>
+            </div>
+          </div>
+          <div className="strat-ctrl">
+            <label className="muted sched-time">
+              실행 시각
+              <input type="time" defaultValue={cfg.schedule_time}
+                     onBlur={(e) => e.target.value !== cfg.schedule_time && patch({ schedule_time: e.target.value })} />
+            </label>
+            <button onClick={() => patch({ schedule_enabled: !cfg.schedule_enabled })} disabled={busy}
+                    style={{ background: cfg.schedule_enabled ? '#2b8a3e' : '#3a3a44' }}>
+              {cfg.schedule_enabled ? '자동 ON' : '자동 OFF'}
+            </button>
+            <button onClick={() => { if (cfg.dry_run && !confirm('LIVE 전환 시 실제 돈으로 주문이 나갑니다. 계속할까요?')) return; patch({ dry_run: !cfg.dry_run }) }}
+                    disabled={busy} style={{ background: cfg.dry_run ? '#e8590c' : '#2b8a3e' }}>
+              {cfg.dry_run ? 'LIVE 전환' : 'DRY 전환'}
+            </button>
+            <button onClick={() => patch({ enabled: !cfg.enabled })} disabled={busy}
+                    style={{ background: cfg.enabled ? '#c92a2a' : '#3182f6' }}>
+              {cfg.enabled ? '봇 정지' : '봇 가동'}
+            </button>
+          </div>
+        </div>
+        <div className="strat-stats">
+          <Stat label="누적 투입(추정)" value={fmt(st.totalInvestedKrw) + '원'} />
+          <Stat label="보유 수량(추정)" value={fmt(st.totalFilledQty) + '주'} />
+          <Stat label="연속 미체결" value={`${st.consecutiveMisses} / ${cfg.fallback_after_misses}일`} />
+        </div>
+        {msg && <p className="muted" style={{ marginTop: 8 }}>{msg}</p>}
+      </section>
+
+      <NextBuy preview={preview} dryRun={cfg.dry_run} onRun={runTick} busy={busy} />
+
+      <section className="card span2">
+        <h2>대기 중 주문 (미체결) <span className="muted" style={{ fontWeight: 400 }}>· 여기 있으면 대기, 사라지면 체결/취소</span></h2>
+        {openOrders.length === 0 ? (
+          <p className="muted">대기 중인 주문 없음</p>
+        ) : (
+          <div className="table-scroll">
+            <table>
+              <thead><tr><th>종목</th><th>구분</th><th>유형</th><th>가격</th><th>수량</th><th>체결</th><th>상태</th></tr></thead>
+              <tbody>
+                {openOrders.map((o) => (
+                  <tr key={o.orderId}>
+                    <td>{(o as Order & { name?: string }).name ?? o.symbol} <span className="muted">{o.symbol}</span></td>
+                    <td className={o.side === 'BUY' ? 'up' : 'down'}>{o.side === 'BUY' ? '매수' : '매도'}</td>
+                    <td>{o.orderType === 'LIMIT' ? '지정가' : '시장가'}</td>
+                    <td>{o.price ? Number(o.price).toLocaleString() : '-'}</td>
+                    <td>{o.quantity}</td>
+                    <td>{o.execution.filledQuantity}/{o.quantity}</td>
+                    <td className="muted">{o.status}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
-        {err && <div className="err" style={{ marginTop: 6 }}>{err}</div>}
+      </section>
+
+      {/* ───────── 4. 실행 기록 ───────── */}
+      <StepHead n={4} title="실행 기록" sub="언제 · 무엇을 적립했나" />
+      <section className="card span2">
+        <div className="table-scroll">
+          <table>
+            <thead><tr><th>시각</th><th>모드</th><th>종목</th><th>액션</th><th>가격</th><th>체결</th><th>사유</th></tr></thead>
+            <tbody>
+              {st.logs.length === 0 ? (
+                <tr><td colSpan={7} className="muted">아직 실행 기록 없음 — "지금 1회 적립"으로 시작</td></tr>
+              ) : (
+                [...st.logs].reverse().map((lg, i) => (
+                  <tr key={i}>
+                    <td className="muted">{lg.ts.slice(0, 16).replace('T', ' ')}</td>
+                    <td><span style={{ color: lg.mode === 'LIVE' ? 'var(--up)' : 'var(--muted)' }}>{lg.mode}</span></td>
+                    <td>{lg.symbol ?? '-'}</td>
+                    <td>{actionKo(lg.action)}</td>
+                    <td>{fmt(lg.price)}</td>
+                    <td>{lg.filled == null ? '-' : lg.filled ? '✅' : '❌'}</td>
+                    <td className="muted">{lg.reason}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* 세부 설정 (접기) */}
+      <DetailSettings cfg={cfg} onPatch={patch} />
+    </>
+  )
+}
+
+function actionKo(a: string): string {
+  if (a === 'LIMIT_BUY') return '지정가 매수'
+  if (a === 'MARKET_BUY') return '시장가 매수'
+  if (a === 'SKIP') return '건너뜀'
+  return a
+}
+
+function StepHead({ n, title, sub }: { n: number; title: string; sub: string }) {
+  return (
+    <div className="span2 step-head">
+      <span className="step-no">{n}</span>
+      <div><div className="step-title">{title}</div><div className="muted step-sub">{sub}</div></div>
+    </div>
+  )
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return <div className="stat"><div className="muted">{label}</div><div className="big">{value}</div></div>
+}
+
+function NextBuy({ preview, dryRun, onRun, busy }: {
+  preview: BotPreview | null; dryRun: boolean; onRun: () => void; busy: boolean
+}) {
+  if (!preview) return null
+  if (!preview.hasTarget) {
+    return <section className="card span2 nextbuy"><h2>다음 적립</h2><p className="muted">{preview.reason ?? '위에서 ETF와 목표비중을 추가하세요.'}</p></section>
+  }
+  const isMarket = preview.action === 'MARKET_BUY'
+  const ok = preview.willTrade
+  return (
+    <section className="card span2 nextbuy">
+      <div className="card-head">
+        <h2>다음 적립 미리보기</h2>
+        <span className={`pill ${ok ? 'ok' : 'block'}`}>
+          {ok ? (dryRun ? '🟢 적립 가능(모의)' : '🟢 적립 실행') : '🔴 지금은 적립 안 함'}
+        </span>
       </div>
-      <div className="hero-sub">
-        <Stat label="계좌번호" value={acc?.accountNo ?? '-'} />
-        <Stat label="매수가능(KRW)" value={fmt(bp?.cashBuyingPower)} />
-        <Stat label="보유 종목수" value={String(holdings?.items.length ?? 0) + '개'} />
+      <div className="nextbuy-main">
+        <div>
+          <div className="nb-sym">{preview.name} <span className="muted">{preview.symbol}</span></div>
+          <div className="nb-order">{isMarket ? '시장가' : `지정가 ${fmt(preview.price)}원`} · {fmt(preview.quantity)}주</div>
+          {preview.decisionReason && <div className="muted" style={{ marginTop: 4 }}>{preview.decisionReason}</div>}
+        </div>
+        <div className="nb-cost">
+          <div className="muted">예상 비용</div>
+          <div className="big">{fmt(preview.estCost)}원</div>
+          {preview.cashBuyingPower != null && <div className="muted" style={{ fontSize: 12 }}>매수가능 {fmt(preview.cashBuyingPower)}원</div>}
+        </div>
+      </div>
+      {!ok && preview.blockReason && <p className="muted" style={{ marginTop: 8 }}>지금 실행 시: <b style={{ color: 'var(--txt)' }}>{preview.blockReason}</b></p>}
+      {preview.warnings?.map((w, i) => <p key={i} className="err" style={{ marginTop: 6 }}>⚠ {w}</p>)}
+      <div style={{ marginTop: 12 }}>
+        <button onClick={onRun} disabled={busy}>지금 1회 적립</button>
       </div>
     </section>
   )
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function DetailSettings({ cfg, onPatch }: {
+  cfg: BotStatus['config']; onPatch: (p: Parameters<typeof api.botPatchConfig>[0]) => void
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <section className="card span2">
+      <button className="ghost" onClick={() => setOpen(!open)} style={{ padding: 0, color: 'var(--txt2)' }}>
+        {open ? '▾' : '▸'} 세부 설정 (하루 적립 금액 · 지정가 할인 · 시장가 전환)
+      </button>
+      {open && (
+        <>
+          <p className="muted" style={{ marginTop: 12, marginBottom: 4 }}>
+            <b style={{ color: 'var(--txt)' }}>하루 적립 금액</b> 안에서 부족한 ETF를 살 수 있는 만큼 매수해요. (예: 10만원이면 그 ETF를 10만원 안에서)
+          </p>
+          <div className="row" style={{ marginTop: 8 }}>
+            <Num label="하루 적립 금액(원)" value={cfg.daily_budget_krw} step={10000} onSave={(v) => onPatch({ daily_budget_krw: v })} />
+            <Num label="지정가 할인(%)" value={cfg.discount_pct * 100} step={0.1} onSave={(v) => onPatch({ discount_pct: v / 100 })} />
+            <Num label="시장가 전환(일)" value={cfg.fallback_after_misses} onSave={(v) => onPatch({ fallback_after_misses: v })} />
+          </div>
+        </>
+      )}
+    </section>
+  )
+}
+
+function Num({ label, value, step = 1, onSave }: { label: string; value: number; step?: number; onSave: (v: number) => void }) {
+  const [v, setV] = useState(String(value))
+  useEffect(() => setV(String(value)), [value])
   return (
     <div className="stat">
       <div className="muted">{label}</div>
-      <div className="big">{value}</div>
+      <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+        <input type="number" step={step} value={v} onChange={(e) => setV(e.target.value)} style={{ width: 110 }} />
+        <button onClick={() => onSave(Number(v))} disabled={Number(v) === value}>저장</button>
+      </div>
     </div>
   )
 }

@@ -297,11 +297,65 @@ class KiwoomBroker(Broker):
         raise NotImplementedError(_TODO)
     def get_commissions(self, account_seq: int | None = None) -> list[dict]: raise NotImplementedError(_TODO)
     def get_orders(self, status: str = "OPEN", symbol: str | None = None, **kwargs: Any) -> dict:
-        raise NotImplementedError(_TODO)
+        """ka10075 미체결요청 → 토스 PaginatedOrderResponse 형태(미체결=OPEN)로 정규화.
+        status=CLOSED(체결완료)는 별도 TR(ka10076) 필요 → 빈 목록 반환."""
+        if status.upper() != "OPEN":
+            return {"orders": [], "nextCursor": None, "hasNext": False}
+        body = {
+            "all_stk_tp": "1" if symbol else "0",
+            "trde_tp": "0",                    # 0:전체
+            "stk_cd": symbol or "",
+            "stex_tp": "0",                    # 0:통합
+        }
+        data = self._request("ka10075", "/api/dostk/acnt", body=body)
+        orders = []
+        for o in data.get("oso", []) or []:
+            io = o.get("io_tp_nm", "")
+            side = "BUY" if "매수" in io else "SELL" if "매도" in io else "BUY"
+            trde = o.get("trde_tp", "")
+            cntr_qty = _i(o.get("cntr_qty"))
+            cntr_pric = o.get("cntr_pric")
+            orders.append({
+                "orderId": o.get("ord_no"),
+                "symbol": o.get("stk_cd"),
+                "name": o.get("stk_nm"),
+                "side": side,
+                "orderType": "MARKET" if "시장" in trde else "LIMIT",
+                "timeInForce": "DAY",
+                "status": "PARTIAL_FILLED" if int(cntr_qty) > 0 else "PENDING",
+                "price": _absnum(o.get("ord_pric")),
+                "quantity": _i(o.get("ord_qty")),
+                "currency": "KRW",
+                "orderedAt": o.get("tm"),
+                "execution": {
+                    "filledQuantity": cntr_qty,
+                    "averageFilledPrice": _absnum(cntr_pric) if cntr_pric and _i(cntr_pric) != "0" else None,
+                },
+            })
+        return {"orders": orders, "nextCursor": None, "hasNext": False}
     def get_order(self, order_id: str, account_seq: int | None = None) -> dict:
         raise NotImplementedError(_TODO)
     def create_order(self, symbol: str, side: str, order_type: str = "LIMIT", **kwargs: Any) -> dict:
-        raise NotImplementedError(_TODO)
+        """kt10000 주식 매수주문 → 토스 OrderResponse({orderId, clientOrderId}) 형태.
+
+        매수전용(이 TR은 매수). order_type: LIMIT(지정가)=trde_tp 0, MARKET(시장가)=3.
+        quantity(주), price(원, 지정가만). 키움은 멱등키(clientOrderId) 미지원.
+        """
+        if side.upper() != "BUY":
+            raise RuntimeError("키움 create_order 는 매수(BUY)만 지원합니다. (매도는 별도 TR)")
+        qty = str(kwargs.get("quantity") or "0")
+        price = kwargs.get("price")
+        is_market = order_type.upper() == "MARKET"
+        body = {
+            "dmst_stex_tp": "KRX",
+            "stk_cd": symbol,
+            "ord_qty": str(int(float(qty))),
+            "ord_uv": "" if is_market else str(int(float(price))) if price is not None else "",
+            "trde_tp": "3" if is_market else "0",  # 3:시장가, 0:보통(지정가)
+            "cond_uv": "",
+        }
+        data = self._request("kt10000", "/api/dostk/ordr", body=body)
+        return {"orderId": data.get("ord_no"), "clientOrderId": kwargs.get("client_order_id")}
     def modify_order(self, order_id: str, order_type: str = "LIMIT", **kwargs: Any) -> dict:
         raise NotImplementedError(_TODO)
     def cancel_order(self, order_id: str, account_seq: int | None = None) -> dict:

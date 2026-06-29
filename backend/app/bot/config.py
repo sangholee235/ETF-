@@ -29,10 +29,17 @@ class BotConfig:
 
     # --- 포트폴리오 (여러 ETF 동시 적립) ---
     portfolio_mode: bool = False    # True: 목표 비중 기반으로 매일 가장 부족한 ETF 적립
-    portfolio: list = field(default_factory=list)  # [{symbol, name, weight}] weight 합=100 권장
+    portfolio: list = field(default_factory=list)  # [{symbol, name, weight, target}]
+    # fill_mode: weight=목표비중 추종 / waterfall=우선순위 순서대로 목표금액(target)까지 채우고 다음
+    fill_mode: str = "weight"
+    # 비중추종에서 가장 부족한(보통 비싼) ETF를 못 살 때:
+    #   False = 살 수 있는 다른 목표미달 ETF라도 산다 (기본, 돈 안 놀림)
+    #   True  = 그것만 사려고 기다린다 (현금 모음, 비중 정확 유지)
+    wait_for_underweight: bool = False
 
     # --- 전략 (매수전용 적립) ---
-    quantity_per_buy: int = 1        # 1회 매수 수량 (주)
+    quantity_per_buy: int = 1        # 1회 매수 수량 (주). buy_amount_krw=0 일 때 사용
+    buy_amount_krw: int = 0          # 1회 적립 금액(원). >0 이면 이 금액 안에서 살 수 있는 만큼 매수
     discount_pct: float = 0.005      # 전일 종가 대비 -0.5% 아래 지정가
     fallback_after_misses: int = 5   # N일 연속 미체결이면 시장가로 강제 매수 (상승장 누락 방지)
     tick_size: int = 5               # KRX ETF 호가단위 5원

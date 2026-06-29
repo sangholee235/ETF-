@@ -17,8 +17,10 @@ venv/
 data/
 logs/
 
-# 봇 개인 설정/상태 (한도·전략·체결 기록)
+# 봇 개인 설정/상태 (한도·전략·체결 기록) — 브로커별 파일 모두 제외
 bot_config.json
+bot_config_*.json
+bot_state*.json
 node_modules/
 
 # OS / IDE

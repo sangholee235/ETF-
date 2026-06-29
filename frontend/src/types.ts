@@ -71,6 +71,16 @@ export interface PortfolioItem {
   symbol: string
   name: string
   weight: number
+  target?: number   // 워터폴: 목표 금액(원)
+}
+
+export interface WaterfallStatus {
+  symbol: string
+  name: string
+  investedKrw: number
+  targetKrw: number
+  fillPct: number               // 0~1
+  status: 'done' | 'active' | 'wait'
 }
 
 export interface BotConfig {
@@ -78,7 +88,10 @@ export interface BotConfig {
   symbol_name: string
   portfolio_mode: boolean
   portfolio: PortfolioItem[]
+  fill_mode: 'weight' | 'waterfall'
+  wait_for_underweight: boolean
   quantity_per_buy: number
+  buy_amount_krw: number
   discount_pct: number
   fallback_after_misses: number
   tick_size: number
@@ -104,6 +117,8 @@ export interface BotPreview {
   enabled: boolean
   dailyBudgetKrw: number
   progress: PortfolioProgress[]
+  fillMode: 'weight' | 'waterfall'
+  waterfall: WaterfallStatus[]
   hasTarget: boolean
   reason?: string                 // hasTarget=false 일 때
   symbol?: string

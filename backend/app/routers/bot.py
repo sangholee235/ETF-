@@ -21,6 +21,13 @@ from ..deps import get_client, to_http
 router = APIRouter(prefix="/api/bot", tags=["bot"])
 
 
+@router.get("/scheduler")
+def scheduler_status():
+    """스케줄러 생존 상태 (자동화가 실제로 돌고 있는지 확인용)."""
+    from ..bot.scheduler import heartbeat
+    return heartbeat()
+
+
 @router.get("/brokers")
 def brokers():
     """동작 가능한 증권사 목록 + 기본값 (대시보드 계좌 분리용)."""
@@ -55,16 +62,22 @@ def preview(broker: str | None = None):
     - 시간과 무관한 구조적 경고(1주 비용 > 하루한도, 매수가능금액 < 예상비용)
     """
     from ..bot import guardrails
-    from ..bot.portfolio import select_underweight
+    from ..bot.portfolio import select_target, select_underweight, waterfall_status
     from ..bot.strategy import decide
 
     cfg = BotConfig.load(broker)
     state = BotState.load(broker)
+    client = get_client(broker)
 
-    # 포트폴리오 진행률 (목표 vs 현재 비중)
-    invested = state.portfolio_invested or {}
-    total_inv = sum(float(v) for v in invested.values())
-    items = [p for p in cfg.portfolio if p.get("symbol") and float(p.get("weight", 0)) > 0]
+    from ..bot.runner import _affordable_symbols, _holdings_values
+
+    # 현재 비중 = 실제 보유 평가금액 기준(못 읽으면 봇 누적투입 폴백)
+    current_values = _holdings_values(client, cfg)
+    invested = current_values if current_values is not None else (state.portfolio_invested or {})
+
+    items = [p for p in cfg.portfolio if p.get("symbol")
+             and (float(p.get("weight", 0)) > 0 or float(p.get("target", 0)) > 0)]
+    total_inv = sum(float(invested.get(p["symbol"], 0)) for p in items)
     total_w = sum(float(p["weight"]) for p in items) or 1.0
     progress = [{
         "symbol": p["symbol"],
@@ -74,22 +87,31 @@ def preview(broker: str | None = None):
         "investedKrw": int(float(invested.get(p["symbol"], 0))),
     } for p in items]
 
+    fill_mode = getattr(cfg, "fill_mode", "weight")
     base = {"dryRun": cfg.dry_run, "enabled": cfg.enabled,
-            "dailyBudgetKrw": cfg.daily_budget_krw, "progress": progress}
+            "dailyBudgetKrw": cfg.daily_budget_krw, "progress": progress,
+            "fillMode": fill_mode,
+            "waterfall": waterfall_status(cfg, state) if fill_mode == "waterfall" else []}
 
-    pick = select_underweight(cfg, state)
-    if pick is None:
+    if not items:
         return {**base, "hasTarget": False,
                 "reason": "적립할 ETF가 없습니다 — 아래에서 ETF와 목표비중을 추가하세요."}
 
-    client = get_client(broker)
-    bp_cash: int | None = None
+    from ..bot.runner import _buying_power
+    bp_cash = _buying_power(client)
+
+    # 실행과 동일: 살 수 있는 ETF 중 가장 부족한 걸 선택. 하나도 못 사면 차단.
+    affordable = _affordable_symbols(client, cfg, bp_cash)
+    pick = select_target(cfg, state, affordable, current_values)
+    if pick is None:
+        target = select_target(cfg, state, None, current_values) or (items[0]["symbol"], items[0].get("name", items[0]["symbol"]))
+        return {**base, "hasTarget": True, "symbol": target[0], "name": target[1],
+                "action": "SKIP", "willTrade": False, "cashBuyingPower": bp_cash,
+                "blockReason": "매수가능금액으로 살 수 있는 ETF가 없습니다 — 입금이 필요합니다."
+                if (affordable is not None and len(affordable) == 0) else "적립할 ETF가 없습니다.",
+                "warnings": []}
     try:
-        bp_cash = int(float(client.get_buying_power("KRW")["cashBuyingPower"]))
-    except Exception:
-        pass
-    try:
-        d = decide(client, cfg, state, symbol=pick[0])
+        d = decide(client, cfg, state, symbol=pick[0], max_spend=bp_cash)
         guard = guardrails.check(client, cfg, state, d.est_cost, buying_power=bp_cash)
     except Exception as e:
         return {**base, "hasTarget": True, "symbol": pick[0], "name": pick[1],
@@ -153,7 +175,10 @@ class ConfigPatch(BaseModel):
     symbol_name: str | None = None
     portfolio_mode: bool | None = None
     portfolio: list | None = None
+    fill_mode: str | None = None
+    wait_for_underweight: bool | None = None
     quantity_per_buy: int | None = None
+    buy_amount_krw: int | None = None
     discount_pct: float | None = None
     fallback_after_misses: int | None = None
     daily_budget_krw: int | None = None
