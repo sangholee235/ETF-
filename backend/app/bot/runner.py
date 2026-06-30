@@ -20,7 +20,8 @@ from .state import BotState
 from .strategy import decide
 
 
-def run_once(client: TossClient | None = None, broker: str | None = None) -> dict:
+def run_once(client: TossClient | None = None, broker: str | None = None,
+             manual: bool = False) -> dict:
     from brokers import get_broker
     cfg = BotConfig.load(broker)
     state = BotState.load(broker)
@@ -28,6 +29,13 @@ def run_once(client: TossClient | None = None, broker: str | None = None) -> dic
 
     # 1. 직전 주문 체결 확인 (LIVE)
     executor.confirm_previous_fill(client, cfg, state)
+
+    # 수동 적립: 살아있는 미체결 주문이 있으면 중복 주문 방지 (먼저 취소 유도)
+    if manual and not cfg.dry_run and _has_open_order(client):
+        log = executor.execute(client, cfg, state,
+                               _skip(_blank(), "대기 중(미체결) 주문이 있습니다 — 먼저 취소 후 다시 시도하세요"))
+        state.add_log(log); state.save()
+        return _summary(cfg, state, log)
 
     # 2. 대상 종목 선택 — 목표 비중 대비 가장 부족한 ETF (단일 종목도 100% 1개로 표현)
     #    돈이 부족하면: 살 수 있는 ETF 중 가장 부족한 걸 산다. 하나도 못 사면 SKIP.
@@ -59,8 +67,8 @@ def run_once(client: TossClient | None = None, broker: str | None = None) -> dic
     # 3. 전략 결정 (하루 적립 금액과 현금 중 작은 금액 안에서 살 수 있는 만큼)
     d = decide(client, cfg, state, symbol=target_symbol, max_spend=bp)
 
-    # 4. 가드레일
-    guard = guardrails.check(client, cfg, state, d.est_cost)
+    # 4. 가드레일 (수동 적립은 '하루 1회' 우회)
+    guard = guardrails.check(client, cfg, state, d.est_cost, allow_daily_repeat=manual)
     if not guard.ok:
         log = executor.execute(client, cfg, state, _skip(d, guard.reason))
         state.add_log(log)
@@ -81,6 +89,14 @@ def run_once(client: TossClient | None = None, broker: str | None = None) -> dic
     state.add_log(log)
     state.save()
     return _summary(cfg, state, log)
+
+
+def _has_open_order(client) -> bool:
+    """살아있는 미체결 주문이 있는지 (수동 재시도 시 중복 주문 방지)."""
+    try:
+        return bool(client.get_orders("OPEN").get("orders"))
+    except (TossApiError, KeyError, ValueError, TypeError, AttributeError, NotImplementedError):
+        return False
 
 
 def _buying_power(client) -> int | None:

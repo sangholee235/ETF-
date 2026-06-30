@@ -126,6 +126,7 @@ export interface BotPreview {
   action?: 'LIMIT_BUY' | 'MARKET_BUY' | 'SKIP'
   quantity?: number
   price?: number | null           // 지정가 (시장가면 null)
+  lastPrice?: number | null        // 현재 시세 (살 수 없어도 표시)
   estCost?: number
   decisionReason?: string
   willTrade?: boolean
@@ -144,6 +145,7 @@ export interface BotLog {
   quantity: number
   price: number | null
   filled: boolean | null
+  order_id?: string | null
 }
 
 export interface BotStatus {

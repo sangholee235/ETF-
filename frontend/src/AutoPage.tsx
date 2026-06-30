@@ -6,6 +6,14 @@ import type { Account, BotPreview, BotStatus, BuyingPower, EtfCatalogItem, Holdi
 
 const fmt = (v: string | number | null | undefined) =>
   v == null ? '-' : Number(v).toLocaleString()
+/** ISO 시각 → 'MM-DD HH:MM' (브로커 공통). 파싱 실패 시 원본/대시. */
+const fmtTime = (v: string | null | undefined) => {
+  if (!v) return '-'
+  const d = new Date(v)
+  if (isNaN(d.getTime())) return v
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
 const pct = (v: string | null | undefined) =>
   v == null ? '-' : (Number(v) * 100).toFixed(2) + '%'
 const sign = (v: string | null | undefined) =>
@@ -48,6 +56,7 @@ function BrokerView({ broker }: { broker: string }) {
   const [account, setAccount] = useState<Account | null>(null)
   const [bp, setBp] = useState<BuyingPower | null>(null)
   const [sched, setSched] = useState<Awaited<ReturnType<typeof api.botScheduler>> | null>(null)
+  const [rt, setRt] = useState<Awaited<ReturnType<typeof api.botRealtime>> | null>(null)
   const [openOrders, setOpenOrders] = useState<Order[]>([])
   const [trades, setTrades] = useState<Order[]>([])
   const [msg, setMsg] = useState('')
@@ -76,14 +85,45 @@ function BrokerView({ broker }: { broker: string }) {
 
   useEffect(() => {
     load()
-    const t = setInterval(() => api.botScheduler().then(setSched).catch(() => {}), 15000)
+    const t = setInterval(() => {
+      api.botScheduler().then(setSched).catch(() => {})
+      api.botRealtime().then(setRt).catch(() => {})
+    }, 15000)
+    api.botRealtime().then(setRt).catch(() => {})
     return () => clearInterval(t)
+  }, [load])
+
+  // 실시간 체결통보(SSE): 체결 들어오면 즉시 화면 갱신 + 토스트
+  useEffect(() => {
+    const es = new EventSource('/api/bot/stream')
+    es.addEventListener('fill', (e) => {
+      try {
+        const d = JSON.parse((e as MessageEvent).data) as {
+          orderStatus?: string; name?: string; symbol?: string; filledQty?: string; filledPrice?: string
+        }
+        if (d.orderStatus && d.orderStatus.includes('체결')) {
+          const px = d.filledPrice ? ` @${Number(d.filledPrice).toLocaleString()}` : ''
+          setMsg(`🔔 체결: ${d.name ?? d.symbol ?? ''} ${d.filledQty ?? ''}주${px}`)
+        }
+        load()
+      } catch { /* ignore */ }
+    })
+    return () => es.close()
   }, [load])
 
   async function patch(p: Parameters<typeof api.botPatchConfig>[0]) {
     setBusy(true); setMsg('')
     try { await api.botPatchConfig(p, broker); await load() }
     catch (e) { setMsg(String(e instanceof Error ? e.message : e)) }
+    finally { setBusy(false) }
+  }
+  async function cancelOrder(orderId: string, label: string) {
+    if (!confirm(`${label} 주문을 취소할까요?`)) return
+    setBusy(true); setMsg('취소 중...')
+    try {
+      await api.cancelOrder(orderId, broker)
+      setMsg(`취소 요청됨: ${orderId}`); await load()
+    } catch (e) { setMsg(String(e instanceof Error ? e.message : e)) }
     finally { setBusy(false) }
   }
   async function runTick() {
@@ -99,6 +139,17 @@ function BrokerView({ broker }: { broker: string }) {
   const cfg = status?.config
   const st = status?.state
   if (!cfg || !st) return <LoadingSkeleton msg={msg} />
+
+  // 실행 기록 '체결' 보강: 로그의 filled 가 아직 null 이어도 거래내역에 체결로 있으면 ✅
+  const fillByOrderId = new Map<string, boolean>()
+  for (const t of trades) {
+    if (t.orderId) fillByOrderId.set(t.orderId, t.status === 'FILLED' || t.status === 'PARTIAL_FILLED')
+  }
+  const logFilled = (lg: typeof st.logs[number]): boolean | null => {
+    if (lg.filled != null) return lg.filled
+    const oid = lg.order_id
+    return oid && fillByOrderId.has(oid) ? fillByOrderId.get(oid)! : null
+  }
 
 
   return (
@@ -150,6 +201,13 @@ function BrokerView({ broker }: { broker: string }) {
                   ? <span className="up">● 스케줄러 동작 중{sched.secondsSinceTick != null ? ` · ${sched.secondsSinceTick}초 전 점검` : ''}</span>
                   : <span className="down">● 스케줄러 응답 없음 (백엔드 확인)</span>}
               </div>
+              {rt?.broker === 'kiwoom' && (
+                <div className="sched-hb">
+                  {rt.connected
+                    ? <span className="up">● 실시간 체결통보 연결됨</span>
+                    : <span className="muted">○ 실시간 체결통보 대기{rt.lastError ? ` (${rt.lastError})` : ''}</span>}
+                </div>
+              )}
             </div>
           </div>
           <div className="strat-ctrl">
@@ -189,19 +247,28 @@ function BrokerView({ broker }: { broker: string }) {
         ) : (
           <div className="table-scroll">
             <table>
-              <thead><tr><th>종목</th><th>구분</th><th>유형</th><th>가격</th><th>수량</th><th>체결</th><th>상태</th></tr></thead>
+              <thead><tr><th>종목</th><th>구분</th><th>유형</th><th>가격</th><th>수량</th><th>체결</th><th>상태</th><th></th></tr></thead>
               <tbody>
-                {openOrders.map((o) => (
+                {openOrders.map((o) => {
+                  const nm = (o as Order & { name?: string }).name ?? o.symbol
+                  return (
                   <tr key={o.orderId}>
-                    <td>{(o as Order & { name?: string }).name ?? o.symbol} <span className="muted">{o.symbol}</span></td>
+                    <td>{nm} <span className="muted">{o.symbol}</span></td>
                     <td className={o.side === 'BUY' ? 'up' : 'down'}>{o.side === 'BUY' ? '매수' : '매도'}</td>
                     <td>{o.orderType === 'LIMIT' ? '지정가' : '시장가'}</td>
                     <td>{o.price ? Number(o.price).toLocaleString() : '-'}</td>
                     <td>{o.quantity}</td>
                     <td>{o.execution.filledQuantity}/{o.quantity}</td>
                     <td className="muted">{o.status}</td>
+                    <td>
+                      <button className="ghost" onClick={() => cancelOrder(o.orderId, `${nm} ${o.orderType === 'LIMIT' ? '지정가' : '시장가'} ${o.quantity}주`)}
+                              disabled={busy} style={{ color: 'var(--down, #f04452)', padding: '4px 10px' }}>
+                        취소
+                      </button>
+                    </td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -218,17 +285,20 @@ function BrokerView({ broker }: { broker: string }) {
               {st.logs.length === 0 ? (
                 <tr><td colSpan={7} className="muted">아직 실행 기록 없음 — "지금 1회 적립"으로 시작</td></tr>
               ) : (
-                [...st.logs].reverse().map((lg, i) => (
+                [...st.logs].reverse().map((lg, i) => {
+                  const f = logFilled(lg)
+                  return (
                   <tr key={i}>
                     <td className="muted">{lg.ts.slice(0, 16).replace('T', ' ')}</td>
                     <td><span style={{ color: lg.mode === 'LIVE' ? 'var(--up)' : 'var(--muted)' }}>{lg.mode}</span></td>
                     <td>{lg.symbol ?? '-'}</td>
                     <td>{actionKo(lg.action)}</td>
                     <td>{fmt(lg.price)}</td>
-                    <td>{lg.filled == null ? '-' : lg.filled ? '✅' : '❌'}</td>
+                    <td>{f == null ? '-' : f ? '✅' : '❌'}</td>
                     <td className="muted">{lg.reason}</td>
                   </tr>
-                ))
+                  )
+                })
               )}
             </tbody>
           </table>
@@ -248,7 +318,7 @@ function BrokerView({ broker }: { broker: string }) {
                   const ex = o.execution as Order['execution'] & { filledAmount?: string }
                   return (
                     <tr key={o.orderId}>
-                      <td className="muted">{(o as Order & { orderedAt?: string }).orderedAt ?? '-'}</td>
+                      <td className="muted">{fmtTime((o as Order & { orderedAt?: string }).orderedAt)}</td>
                       <td>{(o as Order & { name?: string }).name ?? o.symbol} <span className="muted">{o.symbol}</span></td>
                       <td className={o.side === 'BUY' ? 'up' : 'down'}>{o.side === 'BUY' ? '매수' : '매도'}</td>
                       <td>{o.orderType === 'LIMIT' ? '지정가' : '시장가'}</td>
@@ -344,12 +414,17 @@ function NextBuy({ preview, dryRun, onRun, busy }: {
       <div className="nextbuy-main">
         <div>
           <div className="nb-sym">{preview.name} <span className="muted">{preview.symbol}</span></div>
-          <div className="nb-order">{isMarket ? '시장가' : `지정가 ${fmt(preview.price)}원`} · {fmt(preview.quantity)}주</div>
+          {preview.lastPrice != null && (
+            <div className="muted" style={{ marginTop: 2 }}>현재가 {fmt(preview.lastPrice)}원</div>
+          )}
+          {preview.action === 'SKIP'
+            ? <div className="nb-order muted">지금은 적립 안 함</div>
+            : <div className="nb-order">{isMarket ? '시장가' : `지정가 ${fmt(preview.price)}원`} · {fmt(preview.quantity)}주</div>}
           {preview.decisionReason && <div className="muted" style={{ marginTop: 4 }}>{preview.decisionReason}</div>}
         </div>
         <div className="nb-cost">
-          <div className="muted">예상 비용</div>
-          <div className="big">{fmt(preview.estCost)}원</div>
+          <div className="muted">{preview.estCost != null ? '예상 비용' : '1주 가격'}</div>
+          <div className="big">{fmt(preview.estCost ?? preview.lastPrice)}원</div>
           {preview.cashBuyingPower != null && <div className="muted" style={{ fontSize: 12 }}>매수가능 {fmt(preview.cashBuyingPower)}원</div>}
         </div>
       </div>
@@ -378,7 +453,7 @@ function DetailSettings({ cfg, onPatch }: {
           </p>
           <div className="row" style={{ marginTop: 8 }}>
             <Num label="하루 적립 금액(원)" value={cfg.daily_budget_krw} step={10000} onSave={(v) => onPatch({ daily_budget_krw: v })} />
-            <Num label="지정가 할인(%)" value={cfg.discount_pct * 100} step={0.1} onSave={(v) => onPatch({ discount_pct: v / 100 })} />
+            <Num label="지정가 할인(%)" value={cfg.discount_pct * 100} step={0.1} min={0} onSave={(v) => onPatch({ discount_pct: Math.max(0, v) / 100 })} />
             <Num label="시장가 전환(일)" value={cfg.fallback_after_misses} onSave={(v) => onPatch({ fallback_after_misses: v })} />
           </div>
         </>
@@ -387,14 +462,14 @@ function DetailSettings({ cfg, onPatch }: {
   )
 }
 
-function Num({ label, value, step = 1, onSave }: { label: string; value: number; step?: number; onSave: (v: number) => void }) {
+function Num({ label, value, step = 1, min, onSave }: { label: string; value: number; step?: number; min?: number; onSave: (v: number) => void }) {
   const [v, setV] = useState(String(value))
   useEffect(() => setV(String(value)), [value])
   return (
     <div className="stat">
       <div className="muted">{label}</div>
       <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-        <input type="number" step={step} value={v} onChange={(e) => setV(e.target.value)} style={{ width: 110 }} />
+        <input type="number" step={step} min={min} value={v} onChange={(e) => setV(e.target.value)} style={{ width: 110 }} />
         <button onClick={() => onSave(Number(v))} disabled={Number(v) === value}>저장</button>
       </div>
     </div>

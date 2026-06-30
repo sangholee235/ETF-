@@ -79,11 +79,14 @@ export const api = {
   holdings: (broker?: string) => get<Holdings>(`/api/account/holdings${bq(broker, '?')}`),
   openOrders: (broker?: string) => get<OrdersPage>(`/api/orders?status=OPEN${bq(broker)}`),
   closedOrders: (broker?: string) => get<OrdersPage>(`/api/orders?status=CLOSED${bq(broker)}`),
+  cancelOrder: (orderId: string, broker?: string) =>
+    req<{ orderId: string; status: string }>('POST', `/api/orders/${orderId}/cancel${bq(broker, '?')}`, {}),
   buyingPower: (currency: string, broker?: string) =>
     get<BuyingPower>(`/api/account/buying-power?currency=${currency}${bq(broker)}`),
 
   // --- 적립봇 (broker 미지정 시 .env 기본) ---
   botScheduler: () => get<{ alive: boolean; threadAlive: boolean; lastTick: string | null; secondsSinceTick: number | null }>('/api/bot/scheduler'),
+  botRealtime: () => get<{ connected: boolean; lastError: string | null; broker: string | null }>('/api/bot/realtime'),
   botStatus: (broker?: string) => get<BotStatus>(`/api/bot/status${bq(broker, '?')}`),
   botPreview: (broker?: string) => get<BotPreview>(`/api/bot/preview${bq(broker, '?')}`),
   botCatalog: (broker?: string) => get<EtfCatalogItem[]>(`/api/bot/catalog${bq(broker, '?')}`),

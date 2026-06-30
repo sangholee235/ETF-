@@ -49,12 +49,14 @@ def decide(client: TossClient, cfg: BotConfig, state: BotState,
             f"{state.consecutive_misses}일 연속 미체결 -> 시장가 {qty}주 적립", est, sym,
         )
 
-    # 평소: 전일종가 -discount% 아래 지정가, 하루 금액 안에서 살 수 있는 만큼
-    limit = round_to_tick(ref_price * (1 - cfg.discount_pct), cfg.tick_size)
+    # 평소: 전일종가 -discount% 아래 지정가, 하루 금액 안에서 살 수 있는 만큼.
+    # 할인은 항상 0% 이상(음수 입력은 0으로) → 기준가 위로는 절대 안 올림.
+    disc = max(0.0, cfg.discount_pct)
+    limit = round_to_tick(ref_price * (1 - disc), cfg.tick_size)
     est = limit * qty
     return Decision(
         "LIMIT_BUY", qty, limit,
-        f"기준가 {ref_price} 대비 -{cfg.discount_pct*100:.1f}% = {limit} 지정가 {qty}주", est, sym,
+        f"기준가 {ref_price} 대비 -{disc*100:.1f}% = {limit} 지정가 {qty}주", est, sym,
     )
 
 

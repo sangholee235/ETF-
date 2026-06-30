@@ -20,14 +20,16 @@ from contextlib import asynccontextmanager  # noqa: E402
 from fastapi import FastAPI  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 
-from app.bot import scheduler  # noqa: E402
+from app.bot import realtime, scheduler  # noqa: E402
 from app.routers import account, bot, market, orders  # noqa: E402
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     scheduler.start()
+    realtime.start()        # 키움 실시간 체결통보 ws (가능할 때만)
     yield
+    await realtime.stop()
     scheduler.stop()
 
 

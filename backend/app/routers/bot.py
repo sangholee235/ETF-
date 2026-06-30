@@ -28,6 +28,40 @@ def scheduler_status():
     return heartbeat()
 
 
+@router.get("/realtime")
+def realtime_status():
+    """실시간 체결(WebSocket) 연결 상태."""
+    from ..bot import realtime
+    return realtime.status()
+
+
+@router.get("/stream")
+async def stream():
+    """실시간 체결통보 SSE 스트림 (프론트 EventSource 구독용)."""
+    import asyncio
+    import json
+
+    from fastapi.responses import StreamingResponse
+
+    from ..bot import realtime
+
+    async def gen():
+        q = realtime.hub.subscribe()
+        try:
+            yield "retry: 3000\n\n"            # 끊기면 3초 후 재연결
+            while True:
+                try:
+                    ev = await asyncio.wait_for(q.get(), timeout=20)
+                    yield f"event: {ev.get('event', 'message')}\ndata: {json.dumps(ev.get('data'), ensure_ascii=False)}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"     # 프록시 타임아웃 방지 핑
+        finally:
+            realtime.hub.unsubscribe(q)
+
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
 @router.get("/brokers")
 def brokers():
     """동작 가능한 증권사 목록 + 기본값 (대시보드 계좌 분리용)."""
@@ -100,6 +134,8 @@ def preview(broker: str | None = None):
     from ..bot.runner import _buying_power
     bp_cash = _buying_power(client)
 
+    from ..bot.runner import _current
+
     # 실행과 동일: 살 수 있는 ETF 중 가장 부족한 걸 선택. 하나도 못 사면 차단.
     affordable = _affordable_symbols(client, cfg, bp_cash)
     pick = select_target(cfg, state, affordable, current_values)
@@ -107,12 +143,15 @@ def preview(broker: str | None = None):
         target = select_target(cfg, state, None, current_values) or (items[0]["symbol"], items[0].get("name", items[0]["symbol"]))
         return {**base, "hasTarget": True, "symbol": target[0], "name": target[1],
                 "action": "SKIP", "willTrade": False, "cashBuyingPower": bp_cash,
+                "lastPrice": _current(client, target[0]),    # 살 수 없어도 현재 시세는 보여줌
                 "blockReason": "매수가능금액으로 살 수 있는 ETF가 없습니다 — 입금이 필요합니다."
                 if (affordable is not None and len(affordable) == 0) else "적립할 ETF가 없습니다.",
                 "warnings": []}
     try:
         d = decide(client, cfg, state, symbol=pick[0], max_spend=bp_cash)
-        guard = guardrails.check(client, cfg, state, d.est_cost, buying_power=bp_cash)
+        # 미리보기는 수동 적립 버튼 기준 — '하루 1회' 가드는 우회해 보여준다
+        guard = guardrails.check(client, cfg, state, d.est_cost, buying_power=bp_cash,
+                                 allow_daily_repeat=True)
     except Exception as e:
         return {**base, "hasTarget": True, "symbol": pick[0], "name": pick[1],
                 "action": "SKIP", "blockReason": f"미리보기 실패: {e}"}
@@ -135,6 +174,7 @@ def preview(broker: str | None = None):
         "action": d.action,            # LIMIT_BUY | MARKET_BUY | SKIP
         "quantity": d.quantity,
         "price": d.price,              # 지정가 (시장가면 None)
+        "lastPrice": _current(client, d.symbol),    # 현재 시세
         "estCost": d.est_cost,
         "decisionReason": d.reason,
         "willTrade": guard.ok and d.action != "SKIP",
@@ -234,8 +274,9 @@ def logs(limit: int = 200, broker: str | None = None):
 
 @router.post("/run")
 def run(broker: str | None = None):
-    """수동으로 적립 tick 1회 실행 (스케줄러 대신 버튼용)."""
-    return run_once(broker=broker)
+    """수동으로 적립 tick 1회 실행 (스케줄러 대신 버튼용).
+    수동은 '하루 1회' 가드를 우회 — 미체결→취소 후 재시도가 가능하다."""
+    return run_once(broker=broker, manual=True)
 
 
 @router.post("/enabled")

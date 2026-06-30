@@ -69,7 +69,8 @@ def confirm_previous_fill(client: TossClient, cfg: BotConfig, state: BotState) -
     filled_qty = int(float(exe.get("filledQuantity", "0") or 0))
     status = order.get("status")
 
-    if filled_qty > 0 and status in ("FILLED", "PARTIAL_FILLED"):
+    filled = filled_qty > 0 and status in ("FILLED", "PARTIAL_FILLED")
+    if filled:
         avg = float(exe.get("averageFilledPrice") or 0)
         amount = int(avg * filled_qty)
         state.total_filled_qty += filled_qty
@@ -83,5 +84,11 @@ def confirm_previous_fill(client: TossClient, cfg: BotConfig, state: BotState) -
             state.portfolio_invested = inv
     else:
         state.consecutive_misses += 1
+
+    # 해당 주문 로그의 체결 플래그 갱신 (실행 기록 '체결' 칸이 '-'로 남지 않게)
+    for lg in reversed(state.logs):
+        if lg.get("order_id") == oid:
+            lg["filled"] = filled
+            break
 
     state.last_open_order_id = None

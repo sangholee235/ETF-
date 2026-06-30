@@ -77,6 +77,15 @@ class KiwoomBroker(Broker):
             self._token_exp = _parse_expiry(body.get("expires_dt"))
             return self._token
 
+    def access_token(self) -> str:
+        """실시간(WebSocket) 로그인용 접근토큰."""
+        return self._get_token()
+
+    def ws_url(self) -> str:
+        """실시간시세 WebSocket 접속 URL (실전/모의 서버에 맞춤)."""
+        host = self.base_url.replace("https://", "").replace("http://", "")
+        return f"wss://{host}:10000/api/dostk/websocket"
+
     # ---------------- 공통 요청 ----------------
     def _request(self, api_id: str, path: str, body: dict | None = None,
                  cont_yn: str | None = None, next_key: str | None = None) -> dict:
@@ -91,16 +100,38 @@ class KiwoomBroker(Broker):
             headers["cont-yn"] = cont_yn
         if next_key:
             headers["next-key"] = next_key
-        resp = self._session.post(
-            f"{self.base_url}{path}", json=body or {}, headers=headers, timeout=self._timeout
-        )
+        import time
+        for attempt in range(4):
+            resp = self._session.post(
+                f"{self.base_url}{path}", json=body or {}, headers=headers, timeout=self._timeout
+            )
+            if resp.status_code == 429:           # 레이트리밋 → 짧게 백오프 후 재시도
+                time.sleep(0.4 * (attempt + 1))
+                continue
+            break
         resp.raise_for_status()
         data = resp.json()
         if data.get("return_code") not in (0, None):
             raise RuntimeError(
                 f"키움 {api_id} 실패 (code={data.get('return_code')}): {data.get('return_msg', data)}"
             )
+        self._last_headers = {k.lower(): v for k, v in resp.headers.items()}
         return data
+
+    def _request_all(self, api_id: str, path: str, body: dict, list_key: str,
+                     max_pages: int = 20) -> list[dict]:
+        """cont-yn/next-key 연속조회로 list_key 항목을 전부 모은다 (거래내역 등)."""
+        out: list[dict] = []
+        cont_yn, next_key = None, None
+        for _ in range(max_pages):
+            data = self._request(api_id, path, body=body, cont_yn=cont_yn, next_key=next_key)
+            out.extend(data.get(list_key) or [])
+            h = getattr(self, "_last_headers", {})
+            if (h.get("cont-yn") == "Y") and h.get("next-key"):
+                cont_yn, next_key = "Y", h.get("next-key")
+            else:
+                break
+        return out
 
     def get_orderbook(self, symbol: str) -> dict:
         """ka10004 주식호가요청 → 토스 형태({asks, bids})로 정규화.
@@ -297,9 +328,10 @@ class KiwoomBroker(Broker):
         raise NotImplementedError(_TODO)
     def get_commissions(self, account_seq: int | None = None) -> list[dict]: raise NotImplementedError(_TODO)
     def get_orders(self, status: str = "OPEN", symbol: str | None = None, **kwargs: Any) -> dict:
-        """ka10075 미체결요청(OPEN) / ka10076 체결요청(CLOSED·ALL) → 토스 형태로 정규화."""
+        """ka10075 미체결요청(OPEN) / kt00007 계좌별주문체결내역상세(CLOSED·ALL) → 토스 형태로 정규화."""
         if status.upper() in ("CLOSED", "ALL", "FILLED"):
-            closed = self._closed_orders(symbol)
+            days = int(kwargs.get("days") or 14)
+            closed = self._closed_orders_range(symbol, days=days)
             if status.upper() != "ALL":
                 return {"orders": closed, "nextCursor": None, "hasNext": False}
             # ALL = 체결 + 미체결
@@ -330,7 +362,7 @@ class KiwoomBroker(Broker):
                 "price": _absnum(o.get("ord_pric")),
                 "quantity": _i(o.get("ord_qty")),
                 "currency": "KRW",
-                "orderedAt": o.get("tm"),
+                "orderedAt": _ts_iso(o.get("tm")),
                 "execution": {
                     "filledQuantity": cntr_qty,
                     "averageFilledPrice": _absnum(cntr_pric) if cntr_pric and _i(cntr_pric) != "0" else None,
@@ -363,7 +395,7 @@ class KiwoomBroker(Broker):
             "price": _absnum(head.get("ord_pric")),
             "quantity": _i(head.get("ord_qty")),
             "currency": "KRW",
-            "orderedAt": head.get("cntr_tm") or head.get("ord_tm") or head.get("tm"),
+            "orderedAt": _ts_iso(head.get("cntr_tm") or head.get("ord_tm") or head.get("tm")),
             "execution": {
                 "filledQuantity": str(filled_qty),
                 "averageFilledPrice": str(round(avg)),
@@ -373,16 +405,86 @@ class KiwoomBroker(Broker):
             },
         }
 
-    def _closed_orders(self, symbol: str | None = None) -> list[dict]:
-        """체결 내역을 주문번호별로 묶어 토스 Order 목록으로 정규화 (최신 주문번호 우선)."""
-        groups: dict[str, list[dict]] = {}
-        for c in self._fetch_cntr(symbol):
-            oid = c.get("ord_no")
-            if not oid:
+    def _closed_orders(self, symbol: str | None = None, ord_dt: str = "") -> list[dict]:
+        """kt00007 계좌별주문체결내역상세 → 체결된 주문을 토스 Order 목록으로 정규화.
+
+        ord_dt 빈값이면 키움 기준 최근(당일) 조회, YYYYMMDD 지정 시 그 날짜.
+        연속조회(next-key)로 전체 페이지를 모은다. 체결수량>0 인 것만(거래내역)."""
+        rows = self._request_all("kt00007", "/api/dostk/acnt", body={
+            "ord_dt": ord_dt,
+            "qry_tp": "4",              # 4:체결내역만
+            "stk_bond_tp": "0",         # 0:전체
+            "sell_tp": "0",             # 0:전체(매도+매수)
+            "stk_cd": symbol or "",     # 빈값=전체 종목
+            "fr_ord_no": "",
+            "dmst_stex_tp": "%",        # %:전체 거래소
+        }, list_key="acnt_ord_cntr_prps_dtl")
+
+        out: list[dict] = []
+        for r in rows:
+            cntr_qty = int(_i(r.get("cntr_qty")))
+            if cntr_qty <= 0:           # 체결 안 된 건 거래내역에서 제외
                 continue
-            groups.setdefault(oid, []).append(c)
-        out = [self._agg_order(oid, rows) for oid, rows in groups.items()]
+            cntr_uv = int(_absnum(r.get("cntr_uv")))
+            ord_remnq = int(_i(r.get("ord_remnq")))
+            out.append({
+                "orderId": r.get("ord_no"),
+                "symbol": str(r.get("stk_cd") or "").lstrip("A"),
+                "name": r.get("stk_nm"),
+                "side": "BUY" if "매수" in (r.get("io_tp_nm") or "") else "SELL",
+                "orderType": "MARKET" if "시장" in (r.get("trde_tp") or "") else "LIMIT",
+                "status": "FILLED" if ord_remnq == 0 else "PARTIAL_FILLED",
+                "price": _absnum(r.get("ord_uv")),
+                "quantity": _i(r.get("ord_qty")),
+                "currency": "KRW",
+                "orderedAt": _ts_iso((ord_dt + " " if ord_dt else "") + str(r.get("ord_tm") or "")),
+                "execution": {
+                    "filledQuantity": str(cntr_qty),
+                    "averageFilledPrice": str(cntr_uv),
+                    "filledAmount": str(cntr_qty * cntr_uv),
+                },
+            })
         out.sort(key=lambda o: o.get("orderId") or "", reverse=True)
+        return out
+
+    def _closed_orders_range(self, symbol: str | None = None, days: int = 14) -> list[dict]:
+        """최근 days(영업일 기준) 동안의 체결내역을 날짜별로 모아 전체 거래내역으로 반환.
+        kt00007 이 날짜 단위라 날짜를 돌며 조회한다. 10초 TTL 캐시로 연타 시 호출 절감."""
+        import time
+        from datetime import datetime, timezone, timedelta
+
+        key = (symbol or "", days)
+        cache = getattr(self, "_closed_cache", {})
+        hit = cache.get(key)
+        if hit and time.time() - hit[0] < 10.0:
+            return hit[1]
+
+        kst = timezone(timedelta(hours=9))
+        today = datetime.now(kst).date()
+        out: list[dict] = []
+        seen: set[str] = set()
+        checked = 0
+        i = 0
+        while checked < days and i < days * 2:   # 주말 건너뛰며 days 영업일만큼
+            d = today - timedelta(days=i)
+            i += 1
+            if d.weekday() >= 5:                  # 토/일 제외
+                continue
+            checked += 1
+            try:
+                day_orders = self._closed_orders(symbol, ord_dt=d.strftime("%Y%m%d"))
+            except Exception:                     # 한 날짜 실패해도 전체는 계속
+                continue
+            for o in day_orders:
+                oid = o.get("orderId")
+                if oid in seen:
+                    continue
+                seen.add(oid)
+                out.append(o)
+            time.sleep(0.15)                      # 레이트리밋 완화용 throttle
+        out.sort(key=lambda o: o.get("orderedAt") or "", reverse=True)
+        cache[key] = (time.time(), out)
+        self._closed_cache = cache
         return out
 
     def get_order(self, order_id: str, account_seq: int | None = None) -> dict:
@@ -426,7 +528,53 @@ class KiwoomBroker(Broker):
     def modify_order(self, order_id: str, order_type: str = "LIMIT", **kwargs: Any) -> dict:
         raise NotImplementedError(_TODO)
     def cancel_order(self, order_id: str, account_seq: int | None = None) -> dict:
-        raise NotImplementedError(_TODO)
+        """kt10003 주식 취소주문 → 토스 형태({orderId, status:CANCELED})로 정규화.
+
+        종목코드는 미체결 목록에서 원주문번호로 찾고, 잔량 전부 취소(cncl_qty='0')한다.
+        """
+        target = None
+        for o in (self.get_orders("OPEN").get("orders") or []):
+            if o.get("orderId") == order_id:
+                target = o
+                break
+        if target is None:
+            raise RuntimeError(f"취소할 미체결 주문을 찾을 수 없습니다 (주문번호 {order_id}).")
+        data = self._request("kt10003", "/api/dostk/ordr", body={
+            "dmst_stex_tp": "KRX",
+            "orig_ord_no": order_id,
+            "stk_cd": target.get("symbol") or "",
+            "cncl_qty": "0",            # 0: 잔량 전부 취소
+        })
+        return {
+            "orderId": data.get("ord_no"),       # 취소주문번호
+            "originalOrderId": order_id,
+            "symbol": target.get("symbol"),
+            "status": "CANCELED",
+            "canceledQuantity": _i(data.get("cncl_qty")),
+        }
+
+
+def _ts_iso(t) -> str | None:
+    """키움 시각(HHMMSS / YYYYMMDDHHMMSS) -> ISO-8601(KST). 토스 orderedAt 과 동일 포맷.
+    이미 ISO 면 그대로, 비면 None."""
+    s = str(t or "").strip()
+    if not s:
+        return None
+    if "T" in s or "-" in s:          # 이미 ISO
+        return s
+    digits = "".join(ch for ch in s if ch.isdigit())
+    from datetime import datetime, timezone, timedelta
+    kst = timezone(timedelta(hours=9))
+    try:
+        if len(digits) == 14:         # YYYYMMDDHHMMSS
+            return datetime.strptime(digits, "%Y%m%d%H%M%S").replace(tzinfo=kst).isoformat()
+        if len(digits) >= 6:          # HHMMSS(+) -> 오늘 날짜 + 시각
+            hh, mm, ss = int(digits[0:2]), int(digits[2:4]), int(digits[4:6])
+            now = datetime.now(kst)
+            return now.replace(hour=hh, minute=mm, second=ss, microsecond=0).isoformat()
+    except ValueError:
+        return None
+    return None
 
 
 def _absnum(v) -> str:
