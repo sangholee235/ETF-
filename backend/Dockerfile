@@ -13,6 +13,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # 앱 소스
 COPY tossapi/ ./tossapi/
+COPY brokers/ ./brokers/
 COPY app/ ./app/
 
 # 상태/설정 보관 디렉터리 (볼륨 마운트 지점)
