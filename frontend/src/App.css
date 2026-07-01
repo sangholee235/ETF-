@@ -361,17 +361,16 @@ select { background: #15151a; border: 1px solid var(--line); color: var(--txt); 
 /* ---------- 모바일 ---------- */
 @media (max-width: 759px) {
   .app { padding-bottom: calc(14px + env(safe-area-inset-bottom)); }
-  /* 상단 로고바: 모바일에선 통째로 숨김 (공간 절약) */
-  .topbar { display: none; }
+  /* 상단 로고바: 모바일은 컴팩트하게 유지 (노치 아래로) */
+  .topbar { padding: calc(10px + env(safe-area-inset-top)) 16px 10px; gap: 10px; }
+  .topbar h1 { font-size: 16px; }
+  .brand-name { font-size: 17px; }
+  .top-tabs { display: none; }
 
   /* 하단 탭바: 탭이 하나뿐이라 모바일에서도 숨김 (탭 늘리면 되살리기) */
   .bottom-nav { display: none; }
 
-  /* 상단바가 없으니 노치 여백을 콘텐츠 상단에 부여 */
-  main, main.single {
-    padding: calc(12px + env(safe-area-inset-top)) 12px 12px;
-    gap: 12px; max-width: none;
-  }
+  main, main.single { padding: 12px; gap: 12px; max-width: none; }
   .card { padding: 15px; border-radius: 16px; }
   .card h2 { font-size: 14px; margin-bottom: 12px; }
   .card-head { flex-wrap: wrap; gap: 8px; }

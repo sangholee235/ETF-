@@ -62,22 +62,19 @@ function BrokerView({ broker }: { broker: string }) {
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
 
+  // 전부 병렬로 쏘되, 각자 도착하는 대로 반영 (전체 대기 X).
+  // → 가벼운 봇 상태가 오면 스켈레톤이 바로 걷히고, 무거운 거래내역(다일자 스캔)은 나중에 채워짐.
   const load = useCallback(async () => {
+    api.holdings(broker).then(setHoldings).catch(() => {})
+    api.botPreview(broker).then(setPreview).catch(() => {})
+    api.botCatalog(broker).then(setCatalog).catch(() => {})
+    api.accounts(broker).then((x) => setAccount(x[0] ?? null)).catch(() => {})
+    api.buyingPower('KRW', broker).then(setBp).catch(() => {})
+    api.botScheduler().then(setSched).catch(() => {})
+    api.openOrders(broker).then((r) => setOpenOrders(r?.orders ?? [])).catch(() => {})
+    api.closedOrders(broker).then((r) => setTrades(r?.orders ?? [])).catch(() => {})
     try {
-      const [s, h, p, c, a, b, sc, oo, tr] = await Promise.all([
-        api.botStatus(broker),
-        api.holdings(broker).catch(() => null),
-        api.botPreview(broker).catch(() => null),
-        api.botCatalog(broker),
-        api.accounts(broker).then((x) => x[0] ?? null).catch(() => null),
-        api.buyingPower('KRW', broker).catch(() => null),
-        api.botScheduler().catch(() => null),
-        api.openOrders(broker).catch(() => null),
-        api.closedOrders(broker).catch(() => null),
-      ])
-      setStatus(s); setHoldings(h); setPreview(p); setCatalog(c); setAccount(a); setBp(b); setSched(sc)
-      setOpenOrders(oo?.orders ?? [])
-      setTrades(tr?.orders ?? [])
+      setStatus(await api.botStatus(broker))   // 스켈레톤 해제 조건 (가장 가벼운 호출)
     } catch (e) {
       setMsg(String(e instanceof Error ? e.message : e))
     }
