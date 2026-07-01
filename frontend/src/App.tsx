@@ -101,7 +101,7 @@ export default function App() {
               <circle cx="50" cy="20" r="5" fill="#fff" />
             </svg>
           </span>
-          <span className="brand-name">auto<b>vest</b></span>
+          <span className="brand-name">자동<b>적립</b></span>
         </div>
         <nav className="top-tabs">
           <button className={`tab ${tab === 'auto' ? 'on' : ''}`} onClick={() => setTab('auto')}>적립</button>
