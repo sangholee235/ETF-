@@ -512,7 +512,8 @@ function Num({ label, value, step = 1, min, onSave }: { label: string; value: nu
     <div className="stat">
       <div className="muted">{label}</div>
       <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-        <input type="number" step={step} min={min} value={v} onChange={(e) => setV(e.target.value)} style={{ width: 110 }} />
+        <input className="num-in" type="number" step={step} min={min} value={v} onChange={(e) => setV(e.target.value)}
+               style={{ flex: '1 1 auto', minWidth: 0, width: 110 }} />
         <button onClick={() => onSave(Number(v))} disabled={Number(v) === value}>저장</button>
       </div>
     </div>

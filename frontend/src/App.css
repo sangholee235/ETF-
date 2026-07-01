@@ -42,7 +42,9 @@ body {
   background: rgba(22, 22, 26, 0.78);
   backdrop-filter: saturate(180%) blur(14px);
   -webkit-backdrop-filter: saturate(180%) blur(14px);
-  padding: 14px 24px;
+  /* PWA 전체화면에서 노치/상태바 아래로 밀기 */
+  padding: calc(14px + env(safe-area-inset-top)) max(24px, env(safe-area-inset-right))
+           14px max(24px, env(safe-area-inset-left));
   border-bottom: 1px solid var(--line);
   display: flex;
   align-items: center;
@@ -192,7 +194,7 @@ tbody tr.selected td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 /* 자산 요약 히어로 */
 .hero { background: linear-gradient(135deg, #1e1e24 0%, #1b2230 100%); }
 .hero-main { margin-bottom: 18px; }
-.hero-amount { font-size: 34px; font-weight: 800; letter-spacing: -0.03em; margin-top: 4px; }
+.hero-amount { font-size: clamp(26px, 8vw, 34px); font-weight: 800; letter-spacing: -0.03em; margin-top: 4px; word-break: keep-all; }
 .hero-amount .won { font-size: 18px; font-weight: 600; color: var(--muted); margin-left: 3px; }
 .hero-pl { margin-top: 6px; font-size: 14px; font-weight: 600; }
 .hero-sub { display: flex; gap: 28px; flex-wrap: wrap; padding-top: 16px; border-top: 1px solid var(--line); }
@@ -385,10 +387,50 @@ select { background: #15151a; border: 1px solid var(--line); color: var(--txt); 
   button { min-height: 42px; padding: 10px 14px; }
   .seg button, .tab { min-height: 0; }
   .seg button { padding: 7px 16px; }
+
+  /* 히어로 */
+  .hero-sub { gap: 14px 20px; }
+  .hero-sub .stat { min-width: 0; flex: 1 1 40%; }
+
+  /* ③ 전략 상태: LED와 컨트롤을 세로로 쌓고 컨트롤은 꽉 채움 */
+  .strat-row { flex-direction: column; align-items: stretch; }
+  .strat-ctrl { width: 100%; align-items: stretch; }
+  .strat-ctrl > button { flex: 1 1 28%; }
+  .sched-time { width: 100%; }
+  .sched-time input { width: 100%; }
+  .strat-stats { gap: 14px 18px; }
+  .strat-stats .stat { flex: 1 1 40%; }
+
+  /* 다음 적립 미리보기: 금액을 아래로, 좌측 정렬 */
+  .nextbuy-main { flex-direction: column; align-items: stretch; gap: 10px; }
+  .nb-cost { text-align: left; }
+  .nb-order { font-size: 18px; }
+
+  /* 세부설정 입력칸: 컨테이너 폭에 맞게 */
+  .num-in { width: 100% !important; }
+
+  /* 단계 헤더 여백 축소 */
+  .step-head { margin-top: 4px; gap: 10px; }
+  .step-title { font-size: 15px; }
+
+  /* 브로커 토글: 반반 채움 */
+  .broker-bar .broker-btn { flex: 1 1 0; }
+
+  /* 카드 제목 옆 부제(· 설명)가 좁을 때 줄바꿈 허용 */
+  .card h2 { line-height: 1.35; }
 }
 
 @media (max-width: 420px) {
   .stat { flex-basis: 100%; }
+  /* 히어로/전략 통계도 한 줄에 하나씩 (긴 계좌번호 오버플로 방지) */
+  .hero-sub .stat, .strat-stats .stat { flex-basis: 100%; }
   /* 헤더 탭은 한 줄 균등 분배 */
   header .tab { flex: 1 1 0; text-align: center; }
+  /* 여백·표 더 촘촘히 */
+  main, main.single { padding: 10px; }
+  .card { padding: 14px; }
+  th, td { padding: 10px 6px; font-size: 13px; }
+  .hero-amount { font-size: clamp(24px, 9vw, 30px); }
+  /* 전략 컨트롤 버튼: 초소형에선 2개씩 */
+  .strat-ctrl > button { flex: 1 1 44%; }
 }
