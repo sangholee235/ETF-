@@ -241,6 +241,9 @@ function BrokerView({ broker }: { broker: string }) {
 
       <NextBuy preview={preview} dryRun={cfg.dry_run} onRun={runTick} busy={busy} />
 
+      <ManualOrder broker={broker} defaultSymbol={preview?.symbol ?? cfg.portfolio?.[0]?.symbol ?? ''}
+                   tick={cfg.tick_size || 5} dryRun={cfg.dry_run} onDone={load} />
+
       <section className="card span2">
         <h2>대기 중 주문 (미체결) <span className="muted" style={{ fontWeight: 400 }}>· 여기 있으면 대기, 사라지면 체결/취소</span></h2>
         {openOrders.length === 0 ? (
@@ -470,6 +473,91 @@ function NextBuy({ preview, dryRun, onRun, busy }: {
       <div style={{ marginTop: 12 }}>
         <button onClick={onRun} disabled={busy}>지금 1회 적립</button>
       </div>
+    </section>
+  )
+}
+
+function roundTick(p: number, tick: number): number {
+  return Math.floor(p / tick) * tick
+}
+
+/** 수동 매수 — 가격을 틱 단위로 조절해 직접 주문. 현재가 실시간(3초 폴링) 표시. */
+function ManualOrder({ broker, defaultSymbol, tick, dryRun, onDone }: {
+  broker: string; defaultSymbol: string; tick: number; dryRun: boolean; onDone: () => void
+}) {
+  const [symbol, setSymbol] = useState(defaultSymbol)
+  const [qty, setQty] = useState(1)
+  const [price, setPrice] = useState<number | null>(null)
+  const [isMarket, setIsMarket] = useState(false)
+  const [live, setLive] = useState<number | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState('')
+
+  useEffect(() => { setSymbol(defaultSymbol) }, [defaultSymbol])
+
+  // 실시간 현재가 (3초 폴링). 가격 비어있으면 최초 1회 현재가(틱 반올림)로 채움.
+  useEffect(() => {
+    if (!symbol) { setLive(null); return }
+    let alive = true
+    const tickFn = () => api.prices(symbol, broker).then((ps) => {
+      if (!alive) return
+      const n = ps[0]?.lastPrice != null ? Number(ps[0].lastPrice) : null
+      setLive(n)
+      setPrice((cur) => (cur == null && n != null ? roundTick(n, tick) : cur))
+    }).catch(() => {})
+    tickFn()
+    const t = setInterval(tickFn, 3000)
+    return () => { alive = false; clearInterval(t) }
+  }, [symbol, broker, tick])
+
+  const step = (d: number) => setPrice((p) => Math.max(tick, roundTick((p ?? live ?? tick) + d * tick, tick)))
+
+  async function buy() {
+    if (!symbol) { setMsg('종목코드를 입력하세요'); return }
+    if (!isMarket && (!price || price <= 0)) { setMsg('지정가를 입력하세요'); return }
+    const label = `${symbol} ${isMarket ? '시장가' : `지정가 ${price!.toLocaleString()}원`} ${qty}주`
+    const warn = dryRun ? '' : '⚠️ 실제 주문(LIVE)입니다.\n'
+    if (!confirm(`${warn}${label} 매수할까요?`)) return
+    setBusy(true); setMsg('')
+    try {
+      const r = await api.placeBuy(
+        { symbol, quantity: qty, price: isMarket ? null : price, orderType: isMarket ? 'MARKET' : 'LIMIT' }, broker)
+      setMsg(`주문 접수됨: ${r.orderId ?? '완료'}`)
+      onDone()
+    } catch (e) { setMsg(String(e instanceof Error ? e.message : e)) }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <section className="card span2">
+      <h2>수동 매수 <span className="muted" style={{ fontWeight: 400 }}>· 가격 직접 지정 (틱 {tick}원 단위)</span></h2>
+      <div className="row" style={{ gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+        <label className="stat"><div className="muted">종목코드</div>
+          <input value={symbol} onChange={(e) => setSymbol(e.target.value.trim())} style={{ width: 100 }} /></label>
+        <label className="stat"><div className="muted">수량(주)</div>
+          <input type="number" min={1} value={qty} onChange={(e) => setQty(Math.max(1, Number(e.target.value) || 1))} style={{ width: 70 }} /></label>
+        <div className="stat"><div className="muted">현재가 {live != null ? '● 실시간' : ''}</div>
+          <div className="big">{live != null ? live.toLocaleString() : '-'}원</div></div>
+        {!isMarket && (
+          <div className="stat"><div className="muted">지정가</div>
+            <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginTop: 4 }}>
+              <button onClick={() => step(-1)} disabled={busy}>−{tick}</button>
+              <input type="number" step={tick} value={price ?? ''}
+                     onChange={(e) => setPrice(e.target.value ? Number(e.target.value) : null)} style={{ width: 90 }} />
+              <button onClick={() => step(1)} disabled={busy}>＋{tick}</button>
+              <button className="ghost" onClick={() => live != null && setPrice(roundTick(live, tick))} disabled={busy}>현재가</button>
+            </div></div>
+        )}
+        <div className="seg" style={{ marginBottom: 2 }}>
+          <button className={!isMarket ? 'on' : ''} onClick={() => setIsMarket(false)}>지정가</button>
+          <button className={isMarket ? 'on' : ''} onClick={() => setIsMarket(true)}>시장가</button>
+        </div>
+        <button onClick={buy} disabled={busy} style={{ background: 'var(--up, #f04452)', color: '#fff' }}>매수</button>
+      </div>
+      {!isMarket && price != null && qty > 0 && (
+        <p className="muted" style={{ marginTop: 8 }}>예상 금액: <b style={{ color: 'var(--txt)' }}>{(price * qty).toLocaleString()}원</b></p>
+      )}
+      {msg && <p className="muted" style={{ marginTop: 6 }}>{msg}</p>}
     </section>
   )
 }

@@ -81,6 +81,8 @@ export const api = {
   closedOrders: (broker?: string) => get<OrdersPage>(`/api/orders?status=CLOSED${bq(broker)}`),
   cancelOrder: (orderId: string, broker?: string) =>
     req<{ orderId: string; status: string }>('POST', `/api/orders/${orderId}/cancel${bq(broker, '?')}`, {}),
+  placeBuy: (body: { symbol: string; quantity: number; price: number | null; orderType: string }, broker?: string) =>
+    req<{ orderId: string }>('POST', `/api/orders${bq(broker, '?')}`, body),
   buyingPower: (currency: string, broker?: string) =>
     get<BuyingPower>(`/api/account/buying-power?currency=${currency}${bq(broker)}`),
 
