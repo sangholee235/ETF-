@@ -151,6 +151,11 @@ function BrokerView({ broker }: { broker: string }) {
     return oid && fillByOrderId.has(oid) ? fillByOrderId.get(oid)! : null
   }
 
+  // 누적 투입/보유 수량 = 실제 계좌 기준(보유 종목 매입금액·수량 합). 봇 자체 장부(state) 대신.
+  const hi = holdings?.items ?? []
+  const realInvested = hi.reduce((s, it) => s + Number(it.marketValue?.purchaseAmount || 0), 0)
+  const realQty = hi.reduce((s, it) => s + Number(it.quantity || 0), 0)
+
 
   return (
     <>
@@ -232,8 +237,8 @@ function BrokerView({ broker }: { broker: string }) {
           </div>
         </div>
         <div className="strat-stats">
-          <Stat label="누적 투입(추정)" value={fmt(st.totalInvestedKrw) + '원'} />
-          <Stat label="보유 수량(추정)" value={fmt(st.totalFilledQty) + '주'} />
+          <Stat label="누적 투입" value={fmt(realInvested) + '원'} />
+          <Stat label="보유 수량" value={fmt(realQty) + '주'} />
           <Stat label="연속 미체결" value={`${st.consecutiveMisses} / ${cfg.fallback_after_misses}일`} />
         </div>
         {msg && <p className="muted" style={{ marginTop: 8 }}>{msg}</p>}
