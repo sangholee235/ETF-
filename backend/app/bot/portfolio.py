@@ -95,17 +95,21 @@ def select_underweight(cfg: BotConfig, state: BotState,
         return target - current
 
     # 목표 미달(deficit>0) ETF만 후보. 이미 목표 넘으면 더 안 산다(과매수 방지).
-    under_target = [p for p in items if deficit_of(p) > 0]
-    if not under_target:
-        return None
+    under_target = [p for p in items if deficit_of(p) > 1e-9]
+
+    # 완전 균형(부족한 ETF가 하나도 없음)이면: 현금을 놀리지 않는다.
+    # 목표 비중 그대로 유지하며 계속 적립하도록 전체를 후보로 본다.
+    # (하나 사면 살짝 초과 → 다음엔 나머지가 부족 → 돌아가며 균형 유지하며 투입)
+    pool = under_target if under_target else items
 
     # "기다림" 모드: 전체에서 가장 부족한 ETF를 못 사면 차순위를 사지 않고 기다린다.
-    if getattr(cfg, "wait_for_underweight", False) and affordable is not None:
-        top = max(under_target, key=deficit_of)
+    # (균형 상태면 '기다릴 미달 종목'이 없으므로 그냥 적립한다)
+    if getattr(cfg, "wait_for_underweight", False) and affordable is not None and under_target:
+        top = max(pool, key=deficit_of)
         if top["symbol"] not in affordable:
             return None  # 비싼 1순위 살 돈 모일 때까지 대기
 
-    candidates = under_target if affordable is None else [p for p in under_target if p["symbol"] in affordable]
+    candidates = pool if affordable is None else [p for p in pool if p["symbol"] in affordable]
     if not candidates:
         return None
     best = max(candidates, key=deficit_of)
