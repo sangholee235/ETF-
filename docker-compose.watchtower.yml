@@ -6,6 +6,10 @@ services:
   watchtower:
     image: containrrr/watchtower
     restart: unless-stopped
+    environment:
+      # containrrr/watchtower 가 오래돼 도커 API 1.25 로 붙어 최신 데몬이 거부함.
+      # 데몬이 지원하는 버전으로 강제 지정(min 1.40).
+      - DOCKER_API_VERSION=1.44
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock   # 컨테이너 교체용
     command: >
