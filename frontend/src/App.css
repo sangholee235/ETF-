@@ -249,7 +249,19 @@ select { background: #15151a; border: 1px solid var(--line); color: var(--txt); 
 .strat-led.on .led-dot { background: #22c55e; box-shadow: 0 0 0 4px rgba(34,197,94,0.18); }
 .strat-led.off .led-dot { background: var(--muted); }
 .led-title { font-size: 16px; font-weight: 800; }
-.strat-ctrl { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
+.strat-ctrl { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.strat-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+/* 적립 시각: 버튼 사이에 묻히지 않게 독립 필드로 강조 */
+.sched-field {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 12px; background: #15151a;
+  border: 1px solid var(--line); border-radius: 12px; white-space: nowrap;
+}
+.sched-field .muted { font-size: 13px; }
+.sched-field input[type='time'] {
+  width: auto; font-size: 16px; font-weight: 800; letter-spacing: -0.01em;
+  padding: 7px 10px; color: var(--txt);
+}
 .sched-time { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
 .strat-stats { display: flex; gap: 28px; flex-wrap: wrap; padding-top: 16px; margin-top: 16px; border-top: 1px solid var(--line); }
 .strat-stats .big { font-size: 16px; }
@@ -394,10 +406,10 @@ select { background: #15151a; border: 1px solid var(--line); color: var(--txt); 
 
   /* ③ 전략 상태: LED와 컨트롤을 세로로 쌓고 컨트롤은 꽉 채움 */
   .strat-row { flex-direction: column; align-items: stretch; }
-  .strat-ctrl { width: 100%; align-items: stretch; }
-  .strat-ctrl > button { flex: 1 1 28%; }
-  .sched-time { width: 100%; }
-  .sched-time input { width: 100%; }
+  .strat-ctrl { width: 100%; flex-direction: column; align-items: stretch; }
+  .sched-field { width: 100%; justify-content: space-between; }
+  .strat-btns { width: 100%; }
+  .strat-btns > button { flex: 1 1 28%; }
   .strat-stats { gap: 14px 18px; }
   .strat-stats .stat { flex: 1 1 40%; }
 
@@ -432,5 +444,5 @@ select { background: #15151a; border: 1px solid var(--line); color: var(--txt); 
   th, td { padding: 10px 6px; font-size: 13px; }
   .hero-amount { font-size: clamp(24px, 9vw, 30px); }
   /* 전략 컨트롤 버튼: 초소형에선 2개씩 */
-  .strat-ctrl > button { flex: 1 1 44%; }
+  .strat-btns > button { flex: 1 1 44%; }
 }
