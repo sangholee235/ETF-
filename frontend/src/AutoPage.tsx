@@ -216,28 +216,26 @@ function BrokerView({ broker }: { broker: string }) {
               )}
             </div>
           </div>
-          <div className="strat-ctrl">
-            <label className="sched-field">
-              <span className="muted">🕘 적립 시각</span>
-              <input type="time" defaultValue={cfg.schedule_time}
-                     onBlur={(e) => e.target.value !== cfg.schedule_time && patch({ schedule_time: e.target.value })} />
-            </label>
-            <div className="strat-btns">
-              <button onClick={() => patch({ schedule_enabled: !cfg.schedule_enabled })} disabled={busy}
-                      style={{ background: cfg.schedule_enabled ? '#2b8a3e' : '#3a3a44' }}>
-                {cfg.schedule_enabled ? '자동 ON' : '자동 OFF'}
-              </button>
-              <button onClick={() => { if (cfg.dry_run && !confirm('LIVE 전환 시 실제 돈으로 주문이 나갑니다. 계속할까요?')) return; patch({ dry_run: !cfg.dry_run }) }}
-                      disabled={busy} style={{ background: cfg.dry_run ? '#e8590c' : '#2b8a3e' }}>
-                {cfg.dry_run ? 'LIVE 전환' : 'DRY 전환'}
-              </button>
-              <button onClick={() => patch({ enabled: !cfg.enabled })} disabled={busy}
-                      style={{ background: cfg.enabled ? '#c92a2a' : '#3182f6' }}>
-                {cfg.enabled ? '봇 정지' : '봇 가동'}
-              </button>
-            </div>
+          <div className="strat-btns">
+            <button onClick={() => patch({ schedule_enabled: !cfg.schedule_enabled })} disabled={busy}
+                    style={{ background: cfg.schedule_enabled ? '#2b8a3e' : '#3a3a44' }}>
+              {cfg.schedule_enabled ? '자동 ON' : '자동 OFF'}
+            </button>
+            <button onClick={() => { if (cfg.dry_run && !confirm('LIVE 전환 시 실제 돈으로 주문이 나갑니다. 계속할까요?')) return; patch({ dry_run: !cfg.dry_run }) }}
+                    disabled={busy} style={{ background: cfg.dry_run ? '#e8590c' : '#2b8a3e' }}>
+              {cfg.dry_run ? 'LIVE 전환' : 'DRY 전환'}
+            </button>
+            <button onClick={() => patch({ enabled: !cfg.enabled })} disabled={busy}
+                    style={{ background: cfg.enabled ? '#c92a2a' : '#3182f6' }}>
+              {cfg.enabled ? '봇 정지' : '봇 가동'}
+            </button>
           </div>
         </div>
+        <label className="sched-field sched-row">
+          <span className="muted">🕘 적립 시각</span>
+          <input type="time" defaultValue={cfg.schedule_time}
+                 onBlur={(e) => e.target.value !== cfg.schedule_time && patch({ schedule_time: e.target.value })} />
+        </label>
         <div className="strat-stats">
           <Stat label="누적 투입" value={fmt(realInvested) + '원'} />
           <Stat label="보유 수량" value={fmt(realQty) + '주'} />
