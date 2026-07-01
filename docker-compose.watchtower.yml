@@ -1,0 +1,17 @@
+# Watchtower — 서버 전용. ghcr.io 새 이미지를 감지해 컨테이너 자동 교체.
+# 서버에서 한 번만:
+#   docker compose -f docker-compose.watchtower.yml up -d
+# 이후 CI가 이미지 올릴 때마다 알아서 backend/frontend 를 최신으로 갱신(무인).
+services:
+  watchtower:
+    image: containrrr/watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock   # 컨테이너 교체용
+    command: >
+      --interval 300
+      --cleanup
+      --rolling-restart
+    # --interval 300 : 5분마다 레지스트리 확인
+    # --cleanup      : 교체 후 옛 이미지 정리(디스크 절약)
+    # --rolling-restart : 컨테이너 하나씩 교체(다운타임 최소화)

@@ -89,6 +89,39 @@ sudo tailscale serve --bg 8080     # https://<host>.<tailnet>.ts.net 로 노출
 | **긴급정지** | Lightsail 콘솔 **인스턴스 Stop**, 또는 `docker compose stop` |
 | 상태·전략 | 대시보드 또는 `bot_data` 볼륨 |
 
+## 10. CI/CD (자동 배포) — GitHub Actions + ghcr.io + Watchtower
+흐름: `git push main` → Actions(테스트→이미지 빌드→ghcr.io push) → 서버 Watchtower 가 감지해 자동 교체.
+서버로 들어오는 통로 없음(서버가 스스로 pull). 빌드는 CI(빵빵함)에서 → 1GB 서버는 빌드 안 함.
+
+```
+push main → Actions: pytest+tsc → 이미지 빌드 → ghcr.io push
+                                                │
+                          서버 Watchtower(5분) 감지 → 컨테이너 교체(볼륨 유지)
+```
+
+### 최초 1회 설정 (서버)
+```bash
+cd ~/Tossapi
+git pull                                   # image: 참조 붙은 compose 받기
+# ghcr 패키지가 public 이면 무자격 pull 가능 (아래 주의)
+docker compose pull                        # ghcr.io 이미지 당기기
+docker compose up -d                       # 당긴 이미지로 실행(빌드 X)
+docker compose -f docker-compose.watchtower.yml up -d   # Watchtower 상시 가동
+```
+
+### 최초 1회 설정 (GitHub, 브라우저)
+- 첫 Actions 실행 후 ghcr 패키지 2개(`tossapi-backend`, `tossapi-frontend`)가 생김.
+- **패키지 → Package settings → Change visibility → Public** 로 바꿔야 서버가 **무자격 pull** 가능
+  (repo 공개·이미지에 비밀 없음 → public 안전. "서버에 자격증명 0" = 방진 철학 유지).
+  비공개로 두려면 서버에 read 토큰으로 `docker login ghcr.io` 필요.
+
+### 이후 배포 = git push 만
+```
+로컬에서 코드 수정 → git push
+→ (자동) Actions 빌드 → ghcr push → Watchtower 5분 내 교체 → 끝
+```
+상태(bot_data 볼륨)는 교체돼도 유지. 급하면 서버에서 `docker compose pull && docker compose up -d` 수동.
+
 ## 함정 (실제로 겪음)
 - **`No module named 'brokers'`** — Dockerfile 이 `brokers/` 복사 누락했었음 → `COPY brokers/ ./brokers/` 추가로 해결(수정 완료).
 - **`permission denied ... docker.sock`** — `usermod` 후 재접속 안 함 → 재접속 또는 `sudo`.

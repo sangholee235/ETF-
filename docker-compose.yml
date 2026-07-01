@@ -1,10 +1,12 @@
 # autovest — 원클릭 실행
 #   cp .env.example .env   # 토스/키움 키 입력
-#   docker compose up -d   # → http://localhost:8080 (서버 자신만 접근)
-# 외부에서 보려면 SSH 터널 또는 Tailscale 사용 (DEPLOY.md 참고). 절대 0.0.0.0 으로 열지 말 것.
+#   로컬(빌드):   docker compose up -d --build
+#   서버(배포):   docker compose pull && docker compose up -d   # ghcr.io 이미지 당겨서 실행
+# → http://localhost:8080 (서버 자신만 접근). 외부는 SSH터널/Tailscale. 절대 0.0.0.0 금지.
 services:
   backend:
-    build: ./backend
+    image: ghcr.io/sangholee235/tossapi-backend:latest   # CI가 올린 이미지(서버는 pull)
+    build: ./backend                                      # 로컬은 여기서 빌드
     env_file: .env          # 토스 키를 환경변수로 주입 (이미지에 굽지 않음)
     environment:
       - TOSSAPI_DATA_DIR=/appdata
@@ -20,6 +22,7 @@ services:
       start_period: 10s
 
   frontend:
+    image: ghcr.io/sangholee235/tossapi-frontend:latest
     build: ./frontend
     ports:
       - "127.0.0.1:8080:80"  # 서버 자신만 접근(외부 노출 X). SSH터널/Tailscale로 접속

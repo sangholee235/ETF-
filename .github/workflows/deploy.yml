@@ -1,0 +1,65 @@
+name: build-and-push
+
+# main 에 push 하면: 테스트 → 이미지 빌드 → ghcr.io 에 push.
+# 서버는 Watchtower 가 새 이미지를 감지해 자동 교체(서버로 들어오는 통로 없음).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:        # 수동 실행 버튼도 허용
+
+permissions:
+  contents: read
+  packages: write           # ghcr.io push 권한
+
+jobs:
+  # 1) 테스트 게이트 — 통과해야만 빌드/배포로 넘어감
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 백엔드 테스트 (pytest)
+        working-directory: backend
+        run: |
+          pip install -r requirements.txt
+          python -m pytest tests/ -q
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: 프론트 타입체크+빌드 (tsc && vite)
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+  # 2) 이미지 빌드 + ghcr.io push (테스트 통과 시에만)
+  build-push:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: ghcr.io 로그인
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 백엔드 이미지 빌드+push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: true
+          tags: ghcr.io/sangholee235/tossapi-backend:latest
+
+      - name: 프론트 이미지 빌드+push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: true
+          tags: ghcr.io/sangholee235/tossapi-frontend:latest
