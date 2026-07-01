@@ -173,6 +173,7 @@ function BrokerView({ broker }: { broker: string }) {
         </div>
       </section>
       <HoldingsDonut holdings={holdings} />
+      <HoldingsTable holdings={holdings} />
 
       {/* ───────── 2. 내 전략 (목표 비중) ───────── */}
       <StepHead n={2} title="내 전략 — 목표 비중" sub="어느 비중으로 무엇을 살지 정해서 저장" />
@@ -338,6 +339,42 @@ function BrokerView({ broker }: { broker: string }) {
       {/* 세부 설정 (접기) */}
       <DetailSettings cfg={cfg} onPatch={patch} />
     </>
+  )
+}
+
+/** 보유 종목별 평가·손익·수익률 표. */
+function HoldingsTable({ holdings }: { holdings: Holdings | null }) {
+  const items = holdings?.items ?? []
+  return (
+    <section className="card span2">
+      <h2>보유 종목 수익률 <span className="muted" style={{ fontWeight: 400 }}>· 종목별 평가손익</span></h2>
+      {items.length === 0 ? (
+        <p className="muted">보유 종목 없음</p>
+      ) : (
+        <div className="table-scroll">
+          <table>
+            <thead><tr><th>종목</th><th>수량</th><th>평균가</th><th>현재가</th><th>평가금액</th><th>손익</th><th>수익률</th></tr></thead>
+            <tbody>
+              {items.map((it) => {
+                const pl = it.profitLoss?.amount
+                const s = sign(pl)
+                return (
+                  <tr key={it.symbol}>
+                    <td style={{ textAlign: 'left' }}>{it.name} <span className="muted">{it.symbol}</span></td>
+                    <td>{fmt(it.quantity)}</td>
+                    <td>{fmt(it.averagePurchasePrice)}</td>
+                    <td>{fmt(it.lastPrice)}</td>
+                    <td>{fmt(it.marketValue?.amount)}</td>
+                    <td className={s}>{pl != null && Number(pl) >= 0 ? '▲' : '▼'} {fmt(pl != null ? Math.abs(Number(pl)) : null)}</td>
+                    <td className={s}>{pct(it.profitLoss?.rate)}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   )
 }
 
