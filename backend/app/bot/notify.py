@@ -15,7 +15,11 @@ def discord(message: str) -> None:
     try:
         data = json.dumps({"content": message}).encode("utf-8")
         req = urllib.request.Request(
-            url, data=data, headers={"Content-Type": "application/json"}
+            url, data=data,
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "autovest/1.0",   # 없으면 디스코드가 403 으로 막음
+            },
         )
         urllib.request.urlopen(req, timeout=5)
     except Exception:
