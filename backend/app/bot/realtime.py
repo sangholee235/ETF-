@@ -75,6 +75,28 @@ def _normalize(values: dict) -> dict:
     return out
 
 
+async def _maybe_notify_fill(ev: dict) -> None:
+    """실제 '체결'일 때만 디스코드 알림. 접수/확인 등은 무시. 이벤트 루프는 안 막음."""
+    status = str(ev.get("orderStatus") or "")
+    qty = str(ev.get("filledQty") or "0")
+    if "체결" not in status or qty in ("", "0"):
+        return
+    from . import notify
+    name = ev.get("name") or ev.get("symbol") or ""
+    sym = ev.get("symbol") or ""
+    side = "매수" if ev.get("side") == "BUY" else "매도" if ev.get("side") == "SELL" else ""
+    px = ev.get("filledPrice")
+    try:
+        amount = int(str(px or "0")) * int(qty)
+        px_s = f"{int(str(px)):,}원" if px else "-"
+        amt_s = f"{amount:,}원"
+    except (ValueError, TypeError):
+        px_s, amt_s = str(px), "-"
+    msg = f"🟢 체결 · {name} ({sym})\n{side} {qty}주 @ {px_s} · {amt_s}"
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(None, notify.discord, msg)   # fire-and-forget
+
+
 async def _run(ws_url: str, token: str, broker: str) -> None:
     import websockets
 
@@ -107,6 +129,7 @@ async def _run(ws_url: str, token: str, broker: str) -> None:
                                 ev = _normalize(d.get("values", {}) or {})
                                 ev["realtimeName"] = d.get("name")
                                 hub.publish({"event": "fill", "data": ev})
+                                await _maybe_notify_fill(ev)
         except asyncio.CancelledError:
             raise
         except Exception as e:  # 연결 끊김/오류 → 지수 백오프 재연결
