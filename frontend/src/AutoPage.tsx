@@ -303,11 +303,13 @@ function BrokerView({ broker }: { broker: string }) {
             </button>
           </div>
         </div>
-        <label className="sched-field sched-row">
-          <span className="muted">🕘 적립 시각</span>
-          <input type="time" defaultValue={cfg.schedule_time}
-                 onBlur={(e) => e.target.value !== cfg.schedule_time && patch({ schedule_time: e.target.value })} />
-        </label>
+        <div className="sched-field sched-row">
+          <span className="muted">🕘 시작 시점</span>
+          <span style={{ fontWeight: 700 }}>장 개장 직후 ({cfg.schedule_time})</span>
+        </div>
+        <p className="muted" style={{ marginTop: -4, marginBottom: 0 }}>
+          그리디 매수는 예산을 다 쓸 때까지 알아서 반복돼서 시작 시각은 결과에 큰 영향 없어요 — 동시호가 안정화를 위해 개장 5분 후로 고정.
+        </p>
         <div className="strat-stats">
           <Stat label="누적 투입" value={fmt(realInvested) + '원'} money />
           <Stat label="보유 수량" value={fmt(realQty) + '주'} money />
