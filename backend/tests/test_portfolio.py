@@ -1,7 +1,7 @@
 """포트폴리오 종목 선택 테스트."""
 
 from app.bot.config import BotConfig
-from app.bot.portfolio import select_underweight, select_waterfall, waterfall_status
+from app.bot.portfolio import plan_daily_buys, select_underweight, select_waterfall, waterfall_status
 from app.bot.state import BotState
 
 
@@ -96,3 +96,46 @@ def test_converges_to_target():
     state = BotState(portfolio_invested={"069500": 590_000, "360750": 410_000})
     sym, _ = select_underweight(_cfg(), state)
     assert sym == "069500"  # 59% < 60% 목표 -> 069500 이 더 부족
+
+
+# ---------- plan_daily_buys (그리디 하루 예산 분배) ----------
+
+def test_plan_empty_portfolio_returns_empty():
+    assert plan_daily_buys(BotConfig(portfolio=[]), {}, {}, 100_000) == []
+
+
+def test_plan_cold_start_splits_by_weight_not_dump():
+    # 콜드스타트(투입 0)라도 예산 전체를 한 종목에 몰빵하지 않고 비중대로 나눠 산다
+    cfg = _cfg()  # 069500:60, 360750:40
+    prices = {"069500": 10_000, "360750": 10_000}
+    plan = plan_daily_buys(cfg, {}, prices, 100_000)
+    total = sum(i["estCost"] for i in plan)
+    a = sum(i["estCost"] for i in plan if i["symbol"] == "069500")
+    b = sum(i["estCost"] for i in plan if i["symbol"] == "360750")
+    assert total == 100_000          # 예산을 다 씀(현금 안 놀림)
+    assert len(plan) > 1             # 한 건에 몰빵하지 않음
+    assert a / total == 0.6 and b / total == 0.4   # 정확히 목표비중대로 수렴
+
+
+def test_plan_does_not_overshoot_small_deficit_with_big_budget():
+    # 1%p 만 모자란데 예산이 커도, 균형 맞추는 데 필요한 만큼만 사고 그 이상은
+    # 다른(이제 상대적으로 더 부족해진) 종목으로 넘어간다 — 한 종목 몰빵 없음
+    cfg = BotConfig(portfolio=[
+        {"symbol": "A", "name": "A", "weight": 50},
+        {"symbol": "B", "name": "B", "weight": 50},
+    ])
+    prices = {"A": 1_000, "B": 1_000}
+    # 총 100만원 중 A 49%(49만) / B 51%(51만) -> A 가 1%p 모자람. 필요금액=정확히 2만원
+    current = {"A": 490_000, "B": 510_000}
+    plan = plan_daily_buys(cfg, current, prices, 500_000)
+    first = plan[0]
+    assert first["symbol"] == "A"
+    assert first["estCost"] == 20_000   # 딱 필요한 만큼만(오버슈팅 없음), 500,000 전부를 여기 쏟지 않음
+    assert len(plan) > 1                # 나머지 예산은 다른 종목으로 계속 분배됨
+
+
+def test_plan_stops_when_budget_too_small_for_any_share():
+    cfg = _cfg()
+    prices = {"069500": 100_000, "360750": 100_000}
+    plan = plan_daily_buys(cfg, {}, prices, 50_000)   # 1주(10만원)도 못 사는 예산
+    assert plan == []

@@ -114,3 +114,76 @@ def select_underweight(cfg: BotConfig, state: BotState,
         return None
     best = max(candidates, key=deficit_of)
     return best["symbol"], best.get("name", best["symbol"])
+
+
+def plan_daily_buys(cfg: BotConfig, current_values: dict, prices: dict,
+                    budget: int, max_iters: int = 30) -> list[dict]:
+    """하루 예산을 목표 비중대로 그리디하게 여러 종목에 나눠 쓰는 매수 계획을 세운다.
+
+    매 반복마다 '지금 가장 부족한 종목'을 다시 계산해 그 종목이 정확히 목표 비중이
+    되는 데 필요한 금액만큼만 산다(오버슈팅 방지). 필요금액이 1주 값도 안 되면
+    다음으로 부족한 종목을 시도하고, 아무도 부족하지 않으면(균형) 가장 덜 과대비중인
+    종목을 1주씩 사서 예산을 남기지 않는다. 예산이 다하거나 1주도 못 살 때까지 반복.
+
+    current_values: {symbol: 현재 평가금액}. prices: {symbol: 현재가}.
+    반환: [{"symbol","quantity","price","estCost"}, ...] 실행 순서대로.
+    """
+    items = [p for p in cfg.portfolio
+            if p.get("symbol") and float(p.get("weight", 0)) > 0 and p["symbol"] in prices]
+    if not items:
+        return []
+
+    total_weight = sum(float(p["weight"]) for p in items)
+    values = {p["symbol"]: float(current_values.get(p["symbol"], 0)) for p in items}
+    plan: list[dict] = []
+    remaining = budget
+
+    def ideal_needed(p: dict, total_v: float) -> float:
+        """이 종목이 정확히 목표비중이 되는 데 필요한 추가 매수 금액(음수=이미 초과).
+        총자산 0(콜드스타트)이면 공식이 자연히 0을 내어 '균형' 분기로 빠지고,
+        거기서 비중 큰 것부터 1주씩 사며 자연스럽게 시작한다(몰빵 방지)."""
+        w = float(p["weight"]) / total_weight
+        if w >= 1:
+            return float(remaining)
+        return (w * total_v - values[p["symbol"]]) / (1 - w)
+
+    for _ in range(max_iters):
+        if remaining <= 0:
+            break
+        total_v = sum(values.values())
+        # 필요금액 내림차순, 동점(콜드스타트 등)이면 목표비중 큰 것부터
+        ranked = sorted(items, key=lambda p: (ideal_needed(p, total_v), float(p["weight"])), reverse=True)
+
+        chosen_sym = None
+        qty = 0
+        price = 0
+        for p in ranked:
+            need = ideal_needed(p, total_v)
+            if need <= 0:
+                continue  # 진짜 부족(양수)인 것만 여기서 시도
+            sym = p["symbol"]
+            price = prices[sym]
+            qty = int(min(need, remaining) // price)
+            if qty >= 1:
+                chosen_sym = sym
+                break
+
+        if chosen_sym is None:
+            # 부족한 종목이 없거나 다 1주도 안 됨 → 균형 유지: 가장 덜 과대비중인 종목 1주만
+            for p in ranked:
+                sym = p["symbol"]
+                price = prices[sym]
+                if price <= remaining:
+                    chosen_sym, qty = sym, 1
+                    break
+            if chosen_sym is None:
+                break  # 뭘 사도 예산 초과 → 오늘은 여기까지
+
+        cost = qty * price
+        if cost > remaining:
+            break
+        plan.append({"symbol": chosen_sym, "quantity": qty, "price": price, "estCost": cost})
+        values[chosen_sym] = values.get(chosen_sym, 0) + cost
+        remaining -= cost
+
+    return plan

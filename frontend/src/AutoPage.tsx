@@ -547,33 +547,60 @@ function NextBuy({ preview, dryRun, onRun, busy }: {
   if (!preview.hasTarget) {
     return <section className="card span2 nextbuy"><h2>다음 적립</h2><p className="muted">{preview.reason ?? '위에서 ETF와 목표비중을 추가하세요.'}</p></section>
   }
-  const isMarket = preview.action === 'MARKET_BUY'
   const ok = preview.willTrade
+  const plan = preview.plan ?? []
   return (
     <section className="card span2 nextbuy">
       <div className="card-head">
-        <h2>다음 적립 미리보기</h2>
+        <h2>다음 적립 미리보기 <span className="muted" style={{ fontWeight: 400 }}>· 시장가 그리디 리밸런싱</span></h2>
         <span className={`pill ${ok ? 'ok' : 'block'}`}>
           {ok ? (dryRun ? '🟢 적립 가능(모의)' : '🟢 적립 실행') : '🔴 지금은 적립 안 함'}
         </span>
       </div>
-      <div className="nextbuy-main">
-        <div>
-          <div className="nb-sym">{preview.name} <span className="muted">{preview.symbol}</span></div>
-          {preview.lastPrice != null && (
-            <div className="muted" style={{ marginTop: 2 }}>현재가 {fmt(preview.lastPrice)}원</div>
-          )}
-          {preview.action === 'SKIP'
-            ? <div className="nb-order muted">지금은 적립 안 함</div>
-            : <div className="nb-order">{isMarket ? '시장가' : `지정가 ${fmt(preview.price)}원`} · {fmt(preview.quantity)}주</div>}
-          {preview.decisionReason && <div className="muted" style={{ marginTop: 4 }}>{preview.decisionReason}</div>}
+
+      {plan.length > 0 ? (
+        <>
+          <div className="table-scroll">
+            <table>
+              <thead><tr><th>종목</th><th>수량</th><th>가격</th><th>금액</th></tr></thead>
+              <tbody>
+                {plan.map((it) => (
+                  <tr key={it.symbol}>
+                    <td style={{ textAlign: 'left' }}>{it.name} <span className="muted">{it.symbol}</span></td>
+                    <td>{fmt(it.quantity)}주</td>
+                    <td className="money">{fmt(it.price)}원</td>
+                    <td className="money">{fmt(it.estCost)}원</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="nextbuy-main" style={{ marginTop: 10 }}>
+            <div className="muted">{plan.length}개 종목 매수 예정</div>
+            <div className="nb-cost">
+              <div className="muted">총 예상 비용</div>
+              <div className="big money">{fmt(preview.estCost)}원</div>
+              {preview.cashBuyingPower != null && <div className="muted money" style={{ fontSize: 12 }}>매수가능 {fmt(preview.cashBuyingPower)}원</div>}
+            </div>
+          </div>
+        </>
+      ) : (
+        <div className="nextbuy-main">
+          <div>
+            <div className="nb-sym">{preview.name} <span className="muted">{preview.symbol}</span></div>
+            {preview.lastPrice != null && (
+              <div className="muted" style={{ marginTop: 2 }}>현재가 {fmt(preview.lastPrice)}원</div>
+            )}
+            <div className="nb-order muted">지금은 적립 안 함</div>
+            {preview.decisionReason && <div className="muted" style={{ marginTop: 4 }}>{preview.decisionReason}</div>}
+          </div>
+          <div className="nb-cost">
+            <div className="muted">1주 가격</div>
+            <div className="big money">{fmt(preview.lastPrice)}원</div>
+          </div>
         </div>
-        <div className="nb-cost">
-          <div className="muted">{preview.estCost != null ? '예상 비용' : '1주 가격'}</div>
-          <div className="big money">{fmt(preview.estCost ?? preview.lastPrice)}원</div>
-          {preview.cashBuyingPower != null && <div className="muted money" style={{ fontSize: 12 }}>매수가능 {fmt(preview.cashBuyingPower)}원</div>}
-        </div>
-      </div>
+      )}
+
       {!ok && preview.blockReason && <p className="muted" style={{ marginTop: 8 }}>지금 실행 시: <b style={{ color: 'var(--txt)' }}>{preview.blockReason}</b></p>}
       {preview.warnings?.map((w, i) => <p key={i} className="err" style={{ marginTop: 6 }}>⚠ {w}</p>)}
       <div style={{ marginTop: 12 }}>
@@ -591,15 +618,22 @@ function DetailSettings({ cfg, onPatch }: {
   return (
     <section className="card span2">
       <button className="ghost" onClick={() => setOpen(!open)} style={{ padding: 0, color: 'var(--txt2)' }}>
-        {open ? '▾' : '▸'} 세부 설정 (하루 적립 금액 · 지정가 할인 · 시장가 전환)
+        {open ? '▾' : '▸'} 세부 설정 (하루 적립 금액 · 백테스트 전용 옵션)
       </button>
       {open && (
         <>
           <p className="muted" style={{ marginTop: 12, marginBottom: 4 }}>
-            <b style={{ color: 'var(--txt)' }}>하루 적립 금액</b> 안에서 부족한 ETF를 살 수 있는 만큼 매수해요. (예: 10만원이면 그 ETF를 10만원 안에서)
+            <b style={{ color: 'var(--txt)' }}>하루 적립 금액</b> 안에서, 목표 비중대로 그리디하게 여러 ETF에
+            나눠 시장가로 매수해요(오버슈팅 없이 딱 필요한 만큼씩, 예산 소진까지 반복).
           </p>
           <div className="row" style={{ marginTop: 8 }}>
             <Num label="하루 적립 금액(원)" value={cfg.daily_budget_krw} step={10000} onSave={(v) => onPatch({ daily_budget_krw: v })} />
+          </div>
+          <p className="muted" style={{ marginTop: 14, marginBottom: 4 }}>
+            아래 두 값은 <b style={{ color: 'var(--txt)' }}>백테스트 시뮬레이션에만</b> 쓰여요.
+            실제 자동/수동 적립은 항상 시장가 그리디 매수라 영향 없어요.
+          </p>
+          <div className="row" style={{ marginTop: 8 }}>
             <Num label="지정가 할인(%)" value={cfg.discount_pct * 100} step={0.1} min={0} onSave={(v) => onPatch({ discount_pct: Math.max(0, v) / 100 })} />
             <Num label="시장가 전환(일)" value={cfg.fallback_after_misses} onSave={(v) => onPatch({ fallback_after_misses: v })} />
           </div>

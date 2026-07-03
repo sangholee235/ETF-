@@ -133,6 +133,7 @@ export interface BotPreview {
   blockReason?: string | null
   cashBuyingPower?: number | null
   warnings?: string[]
+  plan?: { symbol: string; name: string; quantity: number; price: number; estCost: number }[]
 }
 
 export interface BotLog {

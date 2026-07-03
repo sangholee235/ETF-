@@ -13,7 +13,7 @@ from .strategy import Decision
 _KST = timezone(timedelta(hours=9))
 
 
-def execute(client: TossClient, cfg: BotConfig, state: BotState, d: Decision) -> OrderLog:
+def execute(client: TossClient, cfg: BotConfig, state: BotState, d: Decision, seq: int = 0) -> OrderLog:
     today = date.today().isoformat()
     now = datetime.now(_KST).isoformat()
     mode = "DRY_RUN" if cfg.dry_run else "LIVE"
@@ -22,8 +22,8 @@ def execute(client: TossClient, cfg: BotConfig, state: BotState, d: Decision) ->
     if d.action == "SKIP":
         return OrderLog(now, today, mode, "SKIP", d.reason, sym)
 
-    # 멱등키: 날짜+심볼 기준 (같은 날 중복 주문 방지)
-    client_order_id = f"acc-{sym}-{today}".replace("_", "-")
+    # 멱등키: 날짜+심볼+순번 기준 (그리디 매수로 하루에 같은 종목 여러 번 살 수 있어 순번 포함)
+    client_order_id = f"acc-{sym}-{today}-{seq}".replace("_", "-")
 
     log = OrderLog(
         ts=now, trade_date=today, mode=mode, action=d.action, reason=d.reason,

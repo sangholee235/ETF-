@@ -2,9 +2,10 @@
 
 순서:
 1. 직전 미체결 주문 체결 확인 -> 상태 갱신
-2. 전략 결정 (무슨 주문 낼지)
-3. 가드레일 검증
-4. 실행 (DRY_RUN/LIVE)
+2. 오늘 하루 예산으로 그리디 매수 계획 수립 (목표비중 그대로, 여러 종목 가능)
+3. 가드레일 검증 (킬스위치/장운영시간/하루1회/누적한도)
+4. 계획된 주문들을 순서대로 시장가 실행 (DRY_RUN/LIVE) — 매 건마다 계획을
+   즉시 반영해 다음 판단에 쓰므로, 실행은 시장가로 해야 순서가 안 꼬인다.
 5. 상태/로그 저장
 """
 
@@ -16,8 +17,9 @@ from tossapi import TossClient, TossApiError
 
 from . import executor, guardrails
 from .config import BotConfig
+from .portfolio import plan_daily_buys
 from .state import BotState
-from .strategy import decide
+from .strategy import Decision
 
 
 def run_once(client: TossClient | None = None, broker: str | None = None,
@@ -27,68 +29,61 @@ def run_once(client: TossClient | None = None, broker: str | None = None,
     state = BotState.load(broker)
     client = client or get_broker(broker)
 
-    # 1. 직전 주문 체결 확인 (LIVE)
+    # 1. 직전 주문 체결 확인 (LIVE, 이전 방식으로 남아있는 미체결이 있으면)
     executor.confirm_previous_fill(client, cfg, state)
 
     # 수동 적립: 살아있는 미체결 주문이 있으면 중복 주문 방지 (먼저 취소 유도)
     if manual and not cfg.dry_run and _has_open_order(client):
         log = executor.execute(client, cfg, state,
-                               _skip(_blank(), "대기 중(미체결) 주문이 있습니다 — 먼저 취소 후 다시 시도하세요"))
+                               _skip("대기 중(미체결) 주문이 있습니다 — 먼저 취소 후 다시 시도하세요"))
         state.add_log(log); state.save()
-        return _summary(cfg, state, log)
+        return _summary(cfg, state, [log])
 
-    # 2. 대상 종목 선택 — 목표 비중 대비 가장 부족한 ETF (단일 종목도 100% 1개로 표현)
-    #    돈이 부족하면: 살 수 있는 ETF 중 가장 부족한 걸 산다. 하나도 못 사면 SKIP.
-    from .portfolio import select_target
-    has_target = any(p.get("symbol") and (float(p.get("weight", 0)) > 0 or float(p.get("target", 0)) > 0)
-                     for p in cfg.portfolio)
+    has_target = any(p.get("symbol") and float(p.get("weight", 0)) > 0 for p in cfg.portfolio)
     if not has_target:
-        log = executor.execute(client, cfg, state,
-                               _skip(_blank(), "적립할 ETF가 없음 — ETF와 목표비중을 추가하세요"))
+        log = executor.execute(client, cfg, state, _skip("적립할 ETF가 없음 — ETF와 목표비중을 추가하세요"))
         state.add_log(log); state.save()
-        return _summary(cfg, state, log)
+        return _summary(cfg, state, [log])
 
+    # 2. 오늘 매수 계획 수립: 하루 한도 안에서 목표비중대로 그리디하게 여러 종목
     bp = _buying_power(client)
-    affordable = _affordable_symbols(client, cfg, bp)
-    current_values = _holdings_values(client, cfg)   # 실제 보유 평가금액 기준 비중
-    pick = select_target(cfg, state, affordable, current_values)
-    if pick is None:
-        if affordable is not None and len(affordable) == 0:
-            reason = "매수가능금액으로 살 수 있는 ETF가 없음 — 입금 필요"
-        elif affordable is not None and len(affordable) > 0:
-            reason = "살 수 있는 ETF는 이미 목표 비중 도달 — 목표 미달 ETF는 매수가능금액 부족(현금 모아 매수)"
-        else:
-            reason = "모든 ETF가 목표 비중 도달"
-        log = executor.execute(client, cfg, state, _skip(_blank(), reason))
+    current_values = _holdings_values(client, cfg) or {}
+    prices = _portfolio_prices(client, cfg)
+    budget = min(cfg.daily_budget_krw, bp) if bp is not None else cfg.daily_budget_krw
+    plan = plan_daily_buys(cfg, current_values, prices, budget) if budget > 0 else []
+
+    if not plan:
+        reason = ("매수가능금액/하루 한도로 1주도 못 삽니다" if budget <= 0 or not prices
+                  else "오늘 살 게 없음 — 이미 목표 비중 도달했거나 예산 부족")
+        log = executor.execute(client, cfg, state, _skip(reason))
         state.add_log(log); state.save()
-        return _summary(cfg, state, log)
-    target_symbol = pick[0]
+        return _summary(cfg, state, [log])
 
-    # 3. 전략 결정 (하루 적립 금액과 현금 중 작은 금액 안에서 살 수 있는 만큼)
-    d = decide(client, cfg, state, symbol=target_symbol, max_spend=bp)
-
-    # 4. 가드레일 (수동 적립은 '하루 1회' 우회)
-    guard = guardrails.check(client, cfg, state, d.est_cost, allow_daily_repeat=manual)
+    # 3. 가드레일 (킬스위치/장운영시간/하루1회/누적한도) — 계획 총액 기준 1회 체크
+    total_cost = sum(item["estCost"] for item in plan)
+    guard = guardrails.check(client, cfg, state, total_cost, buying_power=bp, allow_daily_repeat=manual)
     if not guard.ok:
-        log = executor.execute(client, cfg, state, _skip(d, guard.reason))
+        log = executor.execute(client, cfg, state, _skip(guard.reason))
+        state.add_log(log); state.save()
+        return _summary(cfg, state, [log])
+
+    # 4. 계획 순서대로 시장가 매수 실행 (그리디라 지정가 대기 없이 즉시 체결 확정 필요)
+    logs = []
+    for i, item in enumerate(plan):
+        d = Decision(
+            "MARKET_BUY", item["quantity"], None,
+            f"그리디 리밸런싱: {item['symbol']} {item['quantity']}주 (목표비중 맞춤, {item['price']:,}원 기준)",
+            item["estCost"], item["symbol"],
+        )
+        log = executor.execute(client, cfg, state, d, seq=i)
+        if log.action == "MARKET_BUY":
+            _apply_optimistic_fill(state, log, item["price"], item["quantity"])
         state.add_log(log)
-        state.save()
-        return _summary(cfg, state, log)
+        logs.append(log)
 
-    # 5. 실행
-    log = executor.execute(client, cfg, state, d)
-
-    # 6. 상태 갱신
     state.last_trade_date = date.today().isoformat()
-    state.last_client_order_id = log.client_order_id
-    if log.action in ("LIMIT_BUY", "MARKET_BUY"):
-        if cfg.dry_run:
-            _simulate_dry_fill(client, cfg, state, log)
-        elif log.order_id:
-            state.last_open_order_id = log.order_id
-    state.add_log(log)
     state.save()
-    return _summary(cfg, state, log)
+    return _summary(cfg, state, logs)
 
 
 def _has_open_order(client) -> bool:
@@ -107,28 +102,30 @@ def _buying_power(client) -> int | None:
         return None
 
 
-def _affordable_symbols(client, cfg, bp: int | None) -> set[str] | None:
-    """하루 적립 금액과 현금 중 작은 금액으로 '1주 이상' 살 수 있는 종목 집합.
-    매수가능금액을 못 읽으면 None(필터 안 함)."""
-    if bp is None:
+def _current(client: TossClient, symbol: str) -> int | None:
+    try:
+        p = client.get_price(symbol)
+        return int(float(p["lastPrice"])) if p and p.get("lastPrice") else None
+    except (TossApiError, KeyError, ValueError):
         return None
-    cap = min(cfg.daily_budget_krw, bp)
-    out: set[str] = set()
+
+
+def _portfolio_prices(client, cfg) -> dict:
+    """포트폴리오 종목들의 현재가. 조회 실패한 종목은 제외(그 종목은 이번엔 후보에서 빠짐)."""
+    out: dict[str, int] = {}
     for p in cfg.portfolio:
         sym = p.get("symbol")
-        if not sym or (float(p.get("weight", 0)) <= 0 and float(p.get("target", 0)) <= 0):
+        if not sym or float(p.get("weight", 0)) <= 0:
             continue
         try:
-            price = int(float(client.get_price(sym)["lastPrice"]))
+            out[sym] = int(float(client.get_price(sym)["lastPrice"]))
         except (TossApiError, KeyError, ValueError, TypeError):
             continue
-        if price <= cap:           # 1주라도 살 수 있으면 후보
-            out.add(sym)
     return out
 
 
 def _holdings_values(client, cfg) -> dict | None:
-    """포트폴리오 종목의 현재 실제 보유 평가금액(원). 못 읽으면 None(누적투입 기준 폴백)."""
+    """포트폴리오 종목의 현재 실제 보유 평가금액(원). 못 읽으면 None(0원 기준 폴백)."""
     syms = {p.get("symbol") for p in cfg.portfolio if p.get("symbol")}
     if not syms:
         return None
@@ -147,53 +144,42 @@ def _holdings_values(client, cfg) -> dict | None:
     return out
 
 
-def _skip(d, reason: str):
-    from .strategy import Decision
-    return Decision("SKIP", 0, None, reason, 0, getattr(d, "symbol", ""))
+def _skip(reason: str) -> Decision:
+    return Decision("SKIP", 0, None, reason, 0, "")
 
 
-def _blank():
-    from .strategy import Decision
-    return Decision("SKIP", 0, None, "", 0, "")
+def _apply_optimistic_fill(state: BotState, log, price: int, qty: int) -> None:
+    """시장가 매수는 사실상 즉시 체결되므로, 계획 가격 기준으로 바로 통계 반영.
+    (다음 판단에 바로 반영돼야 그리디 루프가 의미 있음 — 정밀 평단은 다음 tick 의
+    confirm_previous_fill/체결내역 조회가 실제값으로 보정)"""
+    log.filled = True
+    amount = int(price * qty)
+    state.total_filled_qty += qty
+    state.total_invested_krw += amount
+    state.consecutive_misses = 0
+    inv = state.portfolio_invested or {}
+    inv[log.symbol] = int(inv.get(log.symbol, 0)) + amount
+    state.portfolio_invested = inv
 
 
-def _simulate_dry_fill(client: TossClient, cfg: BotConfig, state: BotState, log) -> None:
-    """DRY_RUN: 현재가가 지정가 이하이면 '체결됐을 것'으로 간주해 통계 갱신."""
-    if log.action == "MARKET_BUY":
-        filled = True
-        price = log.price or _current(client, log.symbol) or 0
+def _summary(cfg: BotConfig, state: BotState, logs: list) -> dict:
+    buys = [lg for lg in logs if lg.action in ("LIMIT_BUY", "MARKET_BUY")]
+    if buys:
+        total = sum((lg.price or 0) * lg.quantity for lg in buys)
+        decision = {
+            "action": "MARKET_BUY",
+            "reason": f"{len(buys)}개 종목 매수: " + ", ".join(f"{lg.symbol} {lg.quantity}주" for lg in buys),
+            "price": total,
+        }
     else:
-        cur = _current(client, log.symbol)
-        filled = cur is not None and log.price is not None and cur <= log.price
-        price = log.price or 0
-    log.filled = filled
-    if filled:
-        amount = int(price * log.quantity)
-        state.total_filled_qty += log.quantity
-        state.total_invested_krw += amount
-        state.consecutive_misses = 0
-        inv = state.portfolio_invested or {}
-        inv[log.symbol] = int(inv.get(log.symbol, 0)) + amount
-        state.portfolio_invested = inv
-    else:
-        state.consecutive_misses += 1
-
-
-def _current(client: TossClient, symbol: str) -> int | None:
-    try:
-        p = client.get_price(symbol)
-        return int(float(p["lastPrice"])) if p and p.get("lastPrice") else None
-    except (TossApiError, KeyError, ValueError):
-        return None
-
-
-def _summary(cfg: BotConfig, state: BotState, log) -> dict:
+        last = logs[-1]
+        decision = {"action": last.action, "price": last.price, "reason": last.reason}
     return {
         "mode": "DRY_RUN" if cfg.dry_run else "LIVE",
         "enabled": cfg.enabled,
         "symbol": cfg.symbol,
-        "decision": {"action": log.action, "price": log.price, "reason": log.reason},
-        "filled": log.filled,
+        "decision": decision,
+        "filled": all(lg.filled for lg in buys) if buys else logs[-1].filled,
         "consecutiveMisses": state.consecutive_misses,
         "totalInvestedKrw": state.total_invested_krw,
         "totalFilledQty": state.total_filled_qty,

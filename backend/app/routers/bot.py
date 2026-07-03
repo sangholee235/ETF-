@@ -96,14 +96,13 @@ def preview(broker: str | None = None):
     - 시간과 무관한 구조적 경고(1주 비용 > 하루한도, 매수가능금액 < 예상비용)
     """
     from ..bot import guardrails
-    from ..bot.portfolio import select_target, select_underweight, waterfall_status
-    from ..bot.strategy import decide
+    from ..bot.portfolio import plan_daily_buys, waterfall_status
 
     cfg = BotConfig.load(broker)
     state = BotState.load(broker)
     client = get_client(broker)
 
-    from ..bot.runner import _affordable_symbols, _holdings_values
+    from ..bot.runner import _buying_power, _holdings_values, _portfolio_prices, _current
 
     # 현재 비중 = 실제 보유 평가금액 기준(못 읽으면 봇 누적투입 폴백)
     current_values = _holdings_values(client, cfg)
@@ -131,53 +130,53 @@ def preview(broker: str | None = None):
         return {**base, "hasTarget": False,
                 "reason": "적립할 ETF가 없습니다 — 아래에서 ETF와 목표비중을 추가하세요."}
 
-    from ..bot.runner import _buying_power
     bp_cash = _buying_power(client)
+    prices = _portfolio_prices(client, cfg)
+    budget = min(cfg.daily_budget_krw, bp_cash) if bp_cash is not None else cfg.daily_budget_krw
 
-    from ..bot.runner import _current
-
-    # 실행과 동일: 살 수 있는 ETF 중 가장 부족한 걸 선택. 하나도 못 사면 차단.
-    affordable = _affordable_symbols(client, cfg, bp_cash)
-    pick = select_target(cfg, state, affordable, current_values)
-    if pick is None:
-        target = select_target(cfg, state, None, current_values) or (items[0]["symbol"], items[0].get("name", items[0]["symbol"]))
-        return {**base, "hasTarget": True, "symbol": target[0], "name": target[1],
-                "action": "SKIP", "willTrade": False, "cashBuyingPower": bp_cash,
-                "lastPrice": _current(client, target[0]),    # 살 수 없어도 현재 시세는 보여줌
-                "blockReason": "매수가능금액으로 살 수 있는 ETF가 없습니다 — 입금이 필요합니다."
-                if (affordable is not None and len(affordable) == 0) else "적립할 ETF가 없습니다.",
-                "warnings": []}
     try:
-        d = decide(client, cfg, state, symbol=pick[0], max_spend=bp_cash)
-        # 미리보기는 수동 적립 버튼 기준 — '하루 1회' 가드는 우회해 보여준다
-        guard = guardrails.check(client, cfg, state, d.est_cost, buying_power=bp_cash,
-                                 allow_daily_repeat=True)
+        plan = plan_daily_buys(cfg, current_values or {}, prices, budget) if budget > 0 else []
     except Exception as e:
-        return {**base, "hasTarget": True, "symbol": pick[0], "name": pick[1],
-                "action": "SKIP", "blockReason": f"미리보기 실패: {e}"}
+        return {**base, "hasTarget": True, "action": "SKIP", "blockReason": f"미리보기 실패: {e}"}
 
-    # 시간과 무관한 구조적 경고
+    if not plan:
+        first = items[0]
+        return {**base, "hasTarget": True, "symbol": first["symbol"], "name": first.get("name", first["symbol"]),
+                "action": "SKIP", "willTrade": False, "cashBuyingPower": bp_cash,
+                "lastPrice": _current(client, first["symbol"]),
+                "plan": [],
+                "blockReason": "매수가능금액/하루 한도로 1주도 못 삽니다 — 입금이 필요합니다."
+                if budget <= 0 else "오늘 살 게 없습니다 — 이미 목표 비중 도달.",
+                "warnings": []}
+
+    total_cost = sum(p["estCost"] for p in plan)
+    # 미리보기는 수동 적립 버튼 기준 — '하루 1회' 가드는 우회해 보여준다
+    guard = guardrails.check(client, cfg, state, total_cost, buying_power=bp_cash, allow_daily_repeat=True)
+
+    name_by_symbol = {p["symbol"]: p.get("name", p["symbol"]) for p in items}
+    plan_out = [{
+        "symbol": it["symbol"], "name": name_by_symbol.get(it["symbol"], it["symbol"]),
+        "quantity": it["quantity"], "price": it["price"], "estCost": it["estCost"],
+    } for it in plan]
+
     warnings: list[str] = []
-    if d.action in ("LIMIT_BUY", "MARKET_BUY"):
-        if d.est_cost > cfg.daily_budget_krw:
-            warnings.append(
-                f"1회 예상비용 {d.est_cost:,}원이 하루 한도 {cfg.daily_budget_krw:,}원보다 큽니다 — 한도를 올리거나 더 낮은 ETF를 고르세요.")
-        if bp_cash is not None and bp_cash < d.est_cost:
-            warnings.append(
-                f"매수가능금액 {bp_cash:,}원이 예상비용 {d.est_cost:,}원보다 적습니다 — 입금이 필요합니다.")
+    if bp_cash is not None and bp_cash < total_cost:
+        warnings.append(f"매수가능금액 {bp_cash:,}원이 예상비용 {total_cost:,}원보다 적습니다 — 입금이 필요합니다.")
 
+    first = plan_out[0]
     return {
         **base,
         "hasTarget": True,
-        "symbol": d.symbol,
-        "name": pick[1],
-        "action": d.action,            # LIMIT_BUY | MARKET_BUY | SKIP
-        "quantity": d.quantity,
-        "price": d.price,              # 지정가 (시장가면 None)
-        "lastPrice": _current(client, d.symbol),    # 현재 시세
-        "estCost": d.est_cost,
-        "decisionReason": d.reason,
-        "willTrade": guard.ok and d.action != "SKIP",
+        "symbol": first["symbol"],
+        "name": first["name"],
+        "action": "MARKET_BUY",
+        "quantity": first["quantity"],
+        "price": None,                          # 그리디 매수는 전부 시장가
+        "lastPrice": first["price"],
+        "estCost": total_cost,
+        "decisionReason": f"{len(plan_out)}개 종목 매수 예정 (목표비중 그리디 리밸런싱, 시장가)",
+        "plan": plan_out,                       # 오늘 예정된 전체 매수 목록
+        "willTrade": guard.ok,
         "blockReason": None if guard.ok else guard.reason,
         "cashBuyingPower": bp_cash,
         "warnings": warnings,
