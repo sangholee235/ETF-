@@ -6,6 +6,10 @@ import type { Account, BotPreview, BotStatus, BuyingPower, EtfCatalogItem, Holdi
 
 const fmt = (v: string | number | null | undefined) =>
   v == null ? '-' : Number(v).toLocaleString()
+/** 그냥 재미 — 자산 개요 큰 숫자만 0 3개 더 붙여서 기분 좋게(실제 데이터·매매엔 영향 없음). */
+const RICH = 1000
+const fmtRich = (v: string | number | null | undefined) =>
+  v == null ? '-' : (Number(v) * RICH).toLocaleString()
 /** ISO 시각 → 'MM-DD HH:MM' (브로커 공통). 파싱 실패 시 원본/대시. */
 const fmtTime = (v: string | null | undefined) => {
   if (!v) return '-'
@@ -70,7 +74,7 @@ export default function AutoPage() {
 
   useEffect(() => {
     api.brokers()
-      .then((r) => { setBrokers(r.brokers); setBroker((p) => p || r.default || r.brokers[0] || '') })
+      .then((r) => { setBrokers(r.brokers); setBroker((p) => p || (r.brokers.includes('kiwoom') ? 'kiwoom' : r.default) || r.brokers[0] || '') })
       .catch(() => {})
   }, [])
 
@@ -104,7 +108,10 @@ function BrokerView({ broker }: { broker: string }) {
   const [trades, setTrades] = useState<Order[]>([])
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
-  const [hideAssets, setHideAssets] = useState(() => localStorage.getItem('hideAssets') === '1')
+  const [hideAssets, setHideAssets] = useState(() => {
+    const saved = localStorage.getItem('hideAssets')
+    return saved === null ? true : saved === '1'   // 처음 방문이면 기본 가림, 이후엔 사용자 선택 존중
+  })
 
   useEffect(() => {
     document.body.classList.toggle('hide-assets', hideAssets)
@@ -236,19 +243,19 @@ function BrokerView({ broker }: { broker: string }) {
           <div className="muted">평가자산 (KRW)</div>
           <div className="hero-amount money">
             {holdings
-              ? <AnimatedNumber value={Number(holdings.marketValue.amount.krw)} format={(n) => Math.round(n).toLocaleString()} />
+              ? <AnimatedNumber value={Number(holdings.marketValue.amount.krw)} format={(n) => Math.round(n * RICH).toLocaleString()} />
               : '-'}
             <span className="won">원</span>
           </div>
           {holdings && (
             <div className={`hero-pl money ${sign(holdings.profitLoss.amount.krw)}`}>
-              {Number(holdings.profitLoss.amount.krw) >= 0 ? '▲' : '▼'} {fmt(Math.abs(Number(holdings.profitLoss.amount.krw)))}원 ({pct(holdings.profitLoss.rate)})
+              {Number(holdings.profitLoss.amount.krw) >= 0 ? '▲' : '▼'} {fmtRich(Math.abs(Number(holdings.profitLoss.amount.krw)))}원 ({pct(holdings.profitLoss.rate)})
             </div>
           )}
         </div>
         <div className="hero-sub">
           <Stat label="계좌번호" value={account?.accountNo ?? '-'} money />
-          <Stat label="매수가능(KRW)" value={fmt(bp?.cashBuyingPower) + '원'} money />
+          <Stat label="매수가능(KRW)" value={fmtRich(bp?.cashBuyingPower) + '원'} money />
           <Stat label="보유 종목수" value={(holdings?.items.length ?? 0) + '개'} />
         </div>
       </section>
@@ -319,7 +326,7 @@ function BrokerView({ broker }: { broker: string }) {
           그리디 매수는 예산을 다 쓸 때까지 알아서 반복돼서 시작 시각은 결과에 큰 영향 없어요 — 동시호가 안정화를 위해 개장 5분 후로 고정.
         </p>
         <div className="strat-stats">
-          <Stat label="누적 투입" value={fmt(realInvested) + '원'} money />
+          <Stat label="누적 투입" value={fmtRich(realInvested) + '원'} money />
           <Stat label="보유 수량" value={fmt(realQty) + '주'} money />
           <Stat label="연속 미체결" value={`${st.consecutiveMisses} / ${cfg.fallback_after_misses}일`} />
         </div>

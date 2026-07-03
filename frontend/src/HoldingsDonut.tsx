@@ -3,7 +3,8 @@ import { api } from './api'
 import type { Holdings } from './types'
 
 const COLORS = ['#3182f6', '#f5a623', '#22c55e', '#f04452', '#a855f7', '#06b6d4', '#eab308', '#ec4899']
-const fmt = (v: number) => Math.round(v).toLocaleString()
+/** 그냥 재미 — 자산 개요 숫자만 0 3개 더 붙임(실제 데이터엔 영향 없음). AutoPage.tsx 의 RICH 와 동일 배율. */
+const fmtRich = (v: number) => Math.round(v * 1000).toLocaleString()
 
 interface Slice {
   symbol: string
@@ -66,7 +67,7 @@ export default function HoldingsDonut({ holdings }: { holdings: Holdings | null 
             })}
           </g>
           <text x="50%" y="46%" textAnchor="middle" className="donut-total-label">평가자산</text>
-          <text x="50%" y="58%" textAnchor="middle" className="donut-total money">{fmt(total)}원</text>
+          <text x="50%" y="58%" textAnchor="middle" className="donut-total money">{fmtRich(total)}원</text>
         </svg>
 
         <ul className="donut-legend">
@@ -75,7 +76,7 @@ export default function HoldingsDonut({ holdings }: { holdings: Holdings | null 
               <i style={{ background: s.color }} />
               <span className="nm">{s.name} <span className="muted">{s.symbol}</span></span>
               <span className="pc">{(s.pct * 100).toFixed(1)}%</span>
-              <span className="amt muted money">{fmt(s.krw)}원</span>
+              <span className="amt muted money">{fmtRich(s.krw)}원</span>
             </li>
           ))}
         </ul>
