@@ -45,6 +45,8 @@ class BotState:
     last_client_order_id: str | None = None
     portfolio_invested: dict = field(default_factory=dict)  # {symbol: 누적 투입 KRW}
     logs: list = field(default_factory=list)  # list[dict]
+    today_budget_used_krw: int = 0    # 오늘 하루 한도 중 이미 쓴 금액 (날짜 바뀌면 리셋)
+    today_budget_date: str | None = None
 
     @classmethod
     def load(cls, broker: str | None = None) -> "BotState":
@@ -72,3 +74,18 @@ class BotState:
 
     def already_traded_today(self) -> bool:
         return self.last_trade_date == date.today().isoformat()
+
+    def today_remaining_budget(self, daily_budget_krw: int) -> int:
+        """오늘 하루 한도 중 아직 안 쓴 금액. 날짜 바뀌면 자동으로 리셋된 것처럼 전액 반환
+        (실제 리셋은 record_today_spend 가 다음 지출 시점에 해준다)."""
+        if self.today_budget_date != date.today().isoformat():
+            return max(0, daily_budget_krw)
+        return max(0, daily_budget_krw - self.today_budget_used_krw)
+
+    def record_today_spend(self, amount: int) -> None:
+        """장중 여러 번 실행돼도 오늘 쓴 금액을 누적 추적 (날짜 바뀌면 리셋)."""
+        today = date.today().isoformat()
+        if self.today_budget_date != today:
+            self.today_budget_date = today
+            self.today_budget_used_krw = 0
+        self.today_budget_used_krw += amount

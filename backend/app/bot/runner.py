@@ -1,12 +1,17 @@
 """한 번의 적립 tick 을 오케스트레이션한다.
 
+장중 여러 번(스케줄러가 10분 간격) 호출될 수 있다 — '하루 1회'가 아니라
+'하루 한도(daily_budget_krw)를 오늘 얼마나 썼는지'로 관리한다(state.today_*).
+그래서 아침에 예산이 남았거나(1주도 못 사서), 낮에 입금이 들어오거나,
+가격이 떨어져 이제 살 수 있게 되면 다음 실행에서 자동으로 이어서 산다.
+
 순서:
 1. 직전 미체결 주문 체결 확인 -> 상태 갱신
-2. 오늘 하루 예산으로 그리디 매수 계획 수립 (목표비중 그대로, 여러 종목 가능)
-3. 가드레일 검증 (킬스위치/장운영시간/하루1회/누적한도)
+2. 오늘 '남은' 예산으로 그리디 매수 계획 수립 (목표비중 그대로, 여러 종목 가능)
+3. 가드레일 검증 (킬스위치/장운영시간/누적한도)
 4. 계획된 주문들을 순서대로 시장가 실행 (DRY_RUN/LIVE) — 매 건마다 계획을
    즉시 반영해 다음 판단에 쓰므로, 실행은 시장가로 해야 순서가 안 꼬인다.
-5. 상태/로그 저장
+5. 오늘 쓴 금액 기록 + 상태/로그 저장
 """
 
 from __future__ import annotations
@@ -24,6 +29,8 @@ from .strategy import Decision
 
 def run_once(client: TossClient | None = None, broker: str | None = None,
              manual: bool = False) -> dict:
+    # manual 은 더 이상 게이트를 안 바꾼다 — 자동/수동 모두 '오늘 남은 한도' 기준으로
+    # 동일하게 동작한다(하루 여러 번 가능). API 호환을 위해 파라미터만 유지.
     from brokers import get_broker
     cfg = BotConfig.load(broker)
     state = BotState.load(broker)
@@ -32,8 +39,8 @@ def run_once(client: TossClient | None = None, broker: str | None = None,
     # 1. 직전 주문 체결 확인 (LIVE, 이전 방식으로 남아있는 미체결이 있으면)
     executor.confirm_previous_fill(client, cfg, state)
 
-    # 수동 적립: 살아있는 미체결 주문이 있으면 중복 주문 방지 (먼저 취소 유도)
-    if manual and not cfg.dry_run and _has_open_order(client):
+    # 살아있는 미체결 주문이 있으면 중복 주문 방지 (먼저 취소 유도). 시장가라 평소엔 거의 없음.
+    if not cfg.dry_run and _has_open_order(client):
         log = executor.execute(client, cfg, state,
                                _skip("대기 중(미체결) 주문이 있습니다 — 먼저 취소 후 다시 시도하세요"))
         state.add_log(log); state.save()
@@ -45,23 +52,28 @@ def run_once(client: TossClient | None = None, broker: str | None = None,
         state.add_log(log); state.save()
         return _summary(cfg, state, [log])
 
-    # 2. 오늘 매수 계획 수립: 하루 한도 안에서 목표비중대로 그리디하게 여러 종목
+    # 2. 오늘 매수 계획 수립: '오늘 남은' 한도(이미 오늘 쓴 만큼 차감) 안에서 그리디하게
     bp = _buying_power(client)
+    remaining_today = state.today_remaining_budget(cfg.daily_budget_krw)
     current_values = _holdings_values(client, cfg) or {}
     prices = _portfolio_prices(client, cfg)
-    budget = min(cfg.daily_budget_krw, bp) if bp is not None else cfg.daily_budget_krw
+    budget = min(remaining_today, bp) if bp is not None else remaining_today
     plan = plan_daily_buys(cfg, current_values, prices, budget) if budget > 0 else []
 
     if not plan:
-        reason = ("매수가능금액/하루 한도로 1주도 못 삽니다" if budget <= 0 or not prices
-                  else "오늘 살 게 없음 — 이미 목표 비중 도달했거나 예산 부족")
+        if remaining_today <= 0:
+            reason = "오늘 하루 한도를 이미 다 썼습니다 — 내일 다시 시도"
+        elif budget <= 0 or not prices:
+            reason = "매수가능금액/오늘 남은 한도로 1주도 못 삽니다"
+        else:
+            reason = "오늘 살 게 없음 — 이미 목표 비중 도달"
         log = executor.execute(client, cfg, state, _skip(reason))
         state.add_log(log); state.save()
         return _summary(cfg, state, [log])
 
-    # 3. 가드레일 (킬스위치/장운영시간/하루1회/누적한도) — 계획 총액 기준 1회 체크
+    # 3. 가드레일 (킬스위치/장운영시간/누적한도) — 계획 총액 기준 1회 체크
     total_cost = sum(item["estCost"] for item in plan)
-    guard = guardrails.check(client, cfg, state, total_cost, buying_power=bp, allow_daily_repeat=manual)
+    guard = guardrails.check(client, cfg, state, total_cost, buying_power=bp)
     if not guard.ok:
         log = executor.execute(client, cfg, state, _skip(guard.reason))
         state.add_log(log); state.save()
@@ -69,6 +81,7 @@ def run_once(client: TossClient | None = None, broker: str | None = None,
 
     # 4. 계획 순서대로 시장가 매수 실행 (그리디라 지정가 대기 없이 즉시 체결 확정 필요)
     logs = []
+    spent = 0
     for i, item in enumerate(plan):
         d = Decision(
             "MARKET_BUY", item["quantity"], None,
@@ -78,9 +91,13 @@ def run_once(client: TossClient | None = None, broker: str | None = None,
         log = executor.execute(client, cfg, state, d, seq=i)
         if log.action == "MARKET_BUY":
             _apply_optimistic_fill(state, log, item["price"], item["quantity"])
+            spent += item["price"] * item["quantity"]
         state.add_log(log)
         logs.append(log)
 
+    # 5. 오늘 쓴 금액 기록 (다음 실행에서 '오늘 남은 한도' 계산에 반영됨)
+    if spent > 0:
+        state.record_today_spend(spent)
     state.last_trade_date = date.today().isoformat()
     state.save()
     return _summary(cfg, state, logs)

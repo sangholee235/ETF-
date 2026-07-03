@@ -143,7 +143,8 @@ def preview(broker: str | None = None):
 
     bp_cash = _buying_power(client)
     prices = _portfolio_prices(client, cfg)
-    budget = min(cfg.daily_budget_krw, bp_cash) if bp_cash is not None else cfg.daily_budget_krw
+    remaining_today = state.today_remaining_budget(cfg.daily_budget_krw)
+    budget = min(remaining_today, bp_cash) if bp_cash is not None else remaining_today
 
     try:
         plan = plan_daily_buys(cfg, current_values or {}, prices, budget) if budget > 0 else []
@@ -152,17 +153,18 @@ def preview(broker: str | None = None):
 
     if not plan:
         first = items[0]
+        block = ("오늘 하루 한도를 이미 다 썼습니다 — 내일 다시 시도" if remaining_today <= 0
+                 else "매수가능금액/오늘 남은 한도로 1주도 못 삽니다 — 입금이 필요합니다." if budget <= 0
+                 else "오늘 살 게 없습니다 — 이미 목표 비중 도달.")
         return {**base, "hasTarget": True, "symbol": first["symbol"], "name": first.get("name", first["symbol"]),
                 "action": "SKIP", "willTrade": False, "cashBuyingPower": bp_cash,
                 "lastPrice": _current(client, first["symbol"]),
                 "plan": [],
-                "blockReason": "매수가능금액/하루 한도로 1주도 못 삽니다 — 입금이 필요합니다."
-                if budget <= 0 else "오늘 살 게 없습니다 — 이미 목표 비중 도달.",
+                "blockReason": block,
                 "warnings": []}
 
     total_cost = sum(p["estCost"] for p in plan)
-    # 미리보기는 수동 적립 버튼 기준 — '하루 1회' 가드는 우회해 보여준다
-    guard = guardrails.check(client, cfg, state, total_cost, buying_power=bp_cash, allow_daily_repeat=True)
+    guard = guardrails.check(client, cfg, state, total_cost, buying_power=bp_cash)
 
     name_by_symbol = {p["symbol"]: p.get("name", p["symbol"]) for p in items}
     plan_out = [{

@@ -17,10 +17,13 @@ class GuardResult:
 
 
 def check(client: TossClient, cfg: BotConfig, state: BotState, est_cost: int,
-          buying_power: int | None = None, allow_daily_repeat: bool = False) -> GuardResult:
+          buying_power: int | None = None) -> GuardResult:
     """매수 직전 검증. ok=False 면 주문 차단.
     buying_power 를 미리 넘기면 매수가능금액을 중복 조회하지 않는다(미리보기용).
-    allow_daily_repeat=True 면 '하루 1회' 가드를 건너뛴다(수동 적립: 미체결→취소 후 재시도용)."""
+
+    '하루 1회'가 아니라 '하루 예산 소진까지 여러 번 가능' — 오늘 남은 한도는
+    state.today_remaining_budget() 로 관리되고(runner 가 계산), 여기 est_cost 는
+    이미 그 남은 한도 이내로 계획된 값이라 가정한다."""
 
     if not cfg.enabled:
         return GuardResult(False, "봇이 비활성(킬스위치) 상태")
@@ -37,10 +40,6 @@ def check(client: TossClient, cfg: BotConfig, state: BotState, est_cost: int,
         return GuardResult(
             False, f"1회 매수금액이 일일 한도 초과 ({est_cost} > {cfg.daily_budget_krw})"
         )
-
-    # 하루 1회만 (수동 적립은 우회 — 미체결/취소 후 재시도 허용)
-    if not allow_daily_repeat and state.already_traded_today():
-        return GuardResult(False, "오늘 이미 매수 시도함")
 
     # 장 운영시간
     if cfg.require_market_open and not _is_market_open(client):

@@ -319,11 +319,12 @@ function BrokerView({ broker }: { broker: string }) {
           </div>
         </div>
         <div className="sched-field sched-row">
-          <span className="muted">🕘 시작 시점</span>
-          <span style={{ fontWeight: 700 }}>장 개장 직후 (09:05)</span>
+          <span className="muted">🕘 확인 주기</span>
+          <span style={{ fontWeight: 700 }}>장중 10분마다 (09:05~15:20)</span>
         </div>
         <p className="muted" style={{ marginTop: -4, marginBottom: 0 }}>
-          그리디 매수는 예산을 다 쓸 때까지 알아서 반복돼서 시작 시각은 결과에 큰 영향 없어요 — 동시호가 안정화를 위해 개장 5분 후로 고정.
+          하루 한도가 남아있으면 장중 계속 재확인해서 살 기회(입금·가격하락 등)를 놓치지 않아요.
+          오늘 한도를 이미 다 썼거나 목표 비중에 도달했으면 조용히 건너뛰어요.
         </p>
         <div className="strat-stats">
           <Stat label="누적 투입" value={fmtRich(realInvested) + '원'} money />

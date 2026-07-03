@@ -20,11 +20,14 @@ def test_blocks_over_daily_budget():
     assert not r.ok and "일일 한도" in r.reason
 
 
-def test_blocks_when_already_traded_today():
+def test_does_not_block_when_already_traded_today():
+    # '하루 1회'가 아니라 '오늘 남은 예산' 기준 — 오늘 이미 거래했어도(last_trade_date=오늘)
+    # est_cost 가 한도 이내면 가드레일 자체는 막지 않는다. '오늘 얼마나 남았는지'는
+    # runner 가 state.today_remaining_budget() 로 미리 계산해 est_cost 를 그 안으로 계획한다.
     cfg = BotConfig(daily_budget_krw=100_000)
     state = BotState(last_trade_date=date.today().isoformat())
     r = check(FakeClient(), cfg, state, est_cost=30_000)
-    assert not r.ok and "이미" in r.reason
+    assert r.ok
 
 
 def test_blocks_when_market_closed():

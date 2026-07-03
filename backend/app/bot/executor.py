@@ -22,8 +22,10 @@ def execute(client: TossClient, cfg: BotConfig, state: BotState, d: Decision, se
     if d.action == "SKIP":
         return OrderLog(now, today, mode, "SKIP", d.reason, sym)
 
-    # 멱등키: 날짜+심볼+순번 기준 (그리디 매수로 하루에 같은 종목 여러 번 살 수 있어 순번 포함)
-    client_order_id = f"acc-{sym}-{today}-{seq}".replace("_", "-")
+    # 멱등키: 날짜+시각(초)+심볼+순번 (장중 여러 번 실행돼 같은 날 같은 종목이 반복될 수 있어
+    # 순번만으론 다른 실행끼리 겹칠 수 있음 → 실행 시각까지 포함해 유일성 보장)
+    hhmmss = datetime.now(_KST).strftime("%H%M%S")
+    client_order_id = f"acc-{sym}-{today}-{hhmmss}-{seq}".replace("_", "-")
 
     log = OrderLog(
         ts=now, trade_date=today, mode=mode, action=d.action, reason=d.reason,
