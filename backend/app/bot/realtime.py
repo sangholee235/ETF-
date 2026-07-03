@@ -31,6 +31,17 @@ _FID = {
     "908": "time",            # 주문/체결시간 (HHMMSS)
 }
 
+# 현물잔고(type '04') 실시간 FID 맵 — 의미가 확실한 필드만 매핑 (나머지는 미확인이라 제외)
+_FID_BALANCE = {
+    "9001": "symbol",         # 종목코드
+    "302": "name",            # 종목명
+    "10": "currentPrice",     # 현재가 (부호 포함)
+    "930": "quantity",        # 보유수량
+    "931": "avgPrice",        # 매입단가
+    "932": "purchaseAmount",  # 매입금액
+    "8019": "profitRate",     # 손익율(%)
+}
+
 
 class _Hub:
     """SSE 구독자(asyncio.Queue) 집합. 실시간 이벤트를 전체에 fan-out."""
@@ -75,6 +86,21 @@ def _normalize(values: dict) -> dict:
     return out
 
 
+def _normalize_balance(values: dict) -> dict:
+    """현물잔고(04) values(FID) → 읽기 쉬운 dict (자산 실시간 갱신용)."""
+    out: dict[str, Any] = {}
+    for fid, key in _FID_BALANCE.items():
+        if fid in values:
+            out[key] = values[fid]
+    sym = str(out.get("symbol", "")).lstrip("A")
+    if sym:
+        out["symbol"] = sym
+    for k in ("currentPrice", "avgPrice", "purchaseAmount"):
+        if out.get(k):
+            out[k] = str(out[k]).replace("+", "").replace("-", "").strip()
+    return out
+
+
 async def _maybe_notify_fill(ev: dict) -> None:
     """실제 '체결'일 때만 디스코드 알림. 접수/확인 등은 무시. 이벤트 루프는 안 막음."""
     status = str(ev.get("orderStatus") or "")
@@ -116,10 +142,10 @@ async def _run(ws_url: str, token: str, broker: str) -> None:
                         _status["connected"] = True
                         _status["lastError"] = None
                         backoff = 1
-                        # 주문체결(00) 실시간 등록 (item 빈값 = 내 계좌 전체)
+                        # 주문체결(00) + 현물잔고(04) 실시간 등록 (item 빈값 = 내 계좌 전체)
                         await ws.send(json.dumps({
                             "trnm": "REG", "grp_no": "1", "refresh": "1",
-                            "data": [{"item": [""], "type": ["00"]}],
+                            "data": [{"item": [""], "type": ["00", "04"]}],
                         }))
                     elif trnm == "PING":
                         await ws.send(raw)               # 받은 그대로 echo
@@ -130,6 +156,9 @@ async def _run(ws_url: str, token: str, broker: str) -> None:
                                 ev["realtimeName"] = d.get("name")
                                 hub.publish({"event": "fill", "data": ev})
                                 await _maybe_notify_fill(ev)
+                            elif d.get("type") == "04":
+                                bal = _normalize_balance(d.get("values", {}) or {})
+                                hub.publish({"event": "balance", "data": bal})
         except asyncio.CancelledError:
             raise
         except Exception as e:  # 연결 끊김/오류 → 지수 백오프 재연결

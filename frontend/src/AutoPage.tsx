@@ -112,6 +112,51 @@ function BrokerView({ broker }: { broker: string }) {
         load()
       } catch { /* ignore */ }
     })
+    // 실시간 잔고(현재가 변동): 새로고침 없이 평가금액·손익을 즉시 갱신
+    es.addEventListener('balance', (e) => {
+      try {
+        const b = JSON.parse((e as MessageEvent).data) as {
+          symbol?: string; name?: string; currentPrice?: string; quantity?: string
+          avgPrice?: string; purchaseAmount?: string; profitRate?: string
+        }
+        if (!b.symbol) return
+        setHoldings((prev) => {
+          if (!prev) return prev
+          let found = false
+          const items = prev.items.map((it) => {
+            if (it.symbol !== b.symbol) return it
+            found = true
+            const qty = Number(b.quantity ?? it.quantity)
+            const cur = Number(b.currentPrice ?? it.lastPrice)
+            const purchase = Number(b.purchaseAmount ?? it.marketValue.purchaseAmount)
+            const amount = qty * cur
+            const plAmount = amount - purchase
+            const rate = purchase > 0 ? plAmount / purchase : 0
+            return {
+              ...it,
+              name: b.name ?? it.name,
+              quantity: String(qty),
+              lastPrice: String(cur),
+              averagePurchasePrice: b.avgPrice ?? it.averagePurchasePrice,
+              marketValue: { ...it.marketValue, purchaseAmount: String(purchase), amount: String(amount) },
+              profitLoss: { ...it.profitLoss, amount: String(plAmount), rate: String(rate) },
+            }
+          })
+          if (!found) return prev
+          const totalAmount = items.reduce((s, it) => s + Number(it.marketValue.amount || 0), 0)
+          const totalPurchase = items.reduce((s, it) => s + Number(it.marketValue.purchaseAmount || 0), 0)
+          const totalPl = totalAmount - totalPurchase
+          return {
+            ...prev, items,
+            marketValue: { amount: { ...prev.marketValue.amount, krw: String(totalAmount) } },
+            profitLoss: {
+              amount: { ...prev.profitLoss.amount, krw: String(totalPl) },
+              rate: String(totalPurchase > 0 ? totalPl / totalPurchase : 0),
+            },
+          }
+        })
+      } catch { /* ignore */ }
+    })
     return () => es.close()
   }, [load])
 
