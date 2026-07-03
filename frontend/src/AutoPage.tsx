@@ -233,7 +233,7 @@ function BrokerView({ broker }: { broker: string }) {
   return (
     <>
       {/* ───────── 1. 지금 내 자산 ───────── */}
-      <StepHead n={1} title="지금 내 자산" sub="무엇을 · 얼마 비중으로 갖고 있나" />
+      <StepHead n={1} title="지금 내 자산" />
       <section className="card span2 hero">
         <button className="hide-toggle" onClick={() => setHideAssets((v) => !v)}
                 title={hideAssets ? '자산 표시' : '자산 가리기'}>
@@ -263,12 +263,12 @@ function BrokerView({ broker }: { broker: string }) {
       <HoldingsTable holdings={holdings} />
 
       {/* ───────── 2. 내 전략 (목표 비중) ───────── */}
-      <StepHead n={2} title="내 전략 — 목표 비중" sub="어느 비중으로 무엇을 살지 정해서 저장" />
+      <StepHead n={2} title="내 전략 — 목표 비중" />
       <PortfolioPanel cfg={cfg} catalog={catalog} onPatch={patch} busy={busy}
                       progress={preview?.progress} waterfall={preview?.waterfall} nextSymbol={preview?.symbol} />
 
       {/* ───────── 3. 전략 상태 ───────── */}
-      <StepHead n={3} title="전략 상태" sub="지금 자동으로 돌아가고 있나" />
+      <StepHead n={3} title="전략 상태" />
       <section className="card span2 strat">
         <div className="strat-row">
           <div className={`strat-led ${cfg.schedule_enabled && cfg.enabled ? 'on' : 'off'}`}>
@@ -322,10 +322,6 @@ function BrokerView({ broker }: { broker: string }) {
           <span className="muted">🕘 확인 주기</span>
           <span style={{ fontWeight: 700 }}>장중 10분마다 (09:05~15:20)</span>
         </div>
-        <p className="muted" style={{ marginTop: -4, marginBottom: 0 }}>
-          하루 한도가 남아있으면 장중 계속 재확인해서 살 기회(입금·가격하락 등)를 놓치지 않아요.
-          오늘 한도를 이미 다 썼거나 목표 비중에 도달했으면 조용히 건너뛰어요.
-        </p>
         <div className="strat-stats">
           <Stat label="누적 투입" value={fmtRich(realInvested) + '원'} money />
           <Stat label="보유 수량" value={fmt(realQty) + '주'} money />
@@ -337,7 +333,7 @@ function BrokerView({ broker }: { broker: string }) {
       <NextBuy preview={preview} dryRun={cfg.dry_run} onRun={runTick} busy={busy} />
 
       <section className="card span2">
-        <h2>대기 중 주문 (미체결) <span className="muted" style={{ fontWeight: 400 }}>· 여기 있으면 대기, 사라지면 체결/취소</span></h2>
+        <h2>대기 중 주문 (미체결)</h2>
         {openOrders.length === 0 ? (
           <p className="muted">대기 중인 주문 없음</p>
         ) : (
@@ -372,7 +368,7 @@ function BrokerView({ broker }: { broker: string }) {
       </section>
 
       {/* ───────── 4. 실행 기록 ───────── */}
-      <StepHead n={4} title="실행 기록" sub="언제 · 무엇을 적립했나" />
+      <StepHead n={4} title="실행 기록" />
       <section className="card span2">
         <div className="table-scroll">
           <table>
@@ -402,7 +398,7 @@ function BrokerView({ broker }: { broker: string }) {
       </section>
 
       <section className="card span2">
-        <h2>거래내역 (실제 체결) <span className="muted" style={{ fontWeight: 400 }}>· 증권사 체결 기록</span></h2>
+        <h2>거래내역 (실제 체결)</h2>
         {trades.length === 0 ? (
           <p className="muted">체결된 거래 없음</p>
         ) : (
@@ -442,7 +438,7 @@ function HoldingsTable({ holdings }: { holdings: Holdings | null }) {
   const items = holdings?.items ?? []
   return (
     <section className="card span2">
-      <h2>보유 종목 수익률 <span className="muted" style={{ fontWeight: 400 }}>· 종목별 평가손익</span></h2>
+      <h2>보유 종목 수익률</h2>
       {items.length === 0 ? (
         <p className="muted">보유 종목 없음</p>
       ) : (
@@ -545,11 +541,11 @@ function actionKo(a: string): string {
   return a
 }
 
-function StepHead({ n, title, sub }: { n: number; title: string; sub: string }) {
+function StepHead({ n, title }: { n: number; title: string }) {
   return (
     <div className="span2 step-head">
       <span className="step-no">{n}</span>
-      <div><div className="step-title">{title}</div><div className="muted step-sub">{sub}</div></div>
+      <div className="step-title">{title}</div>
     </div>
   )
 }
@@ -570,7 +566,7 @@ function NextBuy({ preview, dryRun, onRun, busy }: {
   return (
     <section className="card span2 nextbuy">
       <div className="card-head">
-        <h2>다음 적립 미리보기 <span className="muted" style={{ fontWeight: 400 }}>· 시장가 그리디 리밸런싱</span></h2>
+        <h2>다음 적립 미리보기</h2>
         <span className={`pill ${ok ? 'ok' : 'block'}`}>
           {ok ? (dryRun ? '🟢 적립 가능(모의)' : '🟢 적립 실행') : '🔴 지금은 적립 안 함'}
         </span>
@@ -636,22 +632,14 @@ function DetailSettings({ cfg, onPatch }: {
   return (
     <section className="card span2">
       <button className="ghost" onClick={() => setOpen(!open)} style={{ padding: 0, color: 'var(--txt2)' }}>
-        {open ? '▾' : '▸'} 세부 설정 (하루 적립 금액 · 백테스트 전용 옵션)
+        {open ? '▾' : '▸'} 세부 설정
       </button>
       {open && (
         <>
-          <p className="muted" style={{ marginTop: 12, marginBottom: 4 }}>
-            <b style={{ color: 'var(--txt)' }}>하루 적립 금액</b> 안에서, 목표 비중대로 그리디하게 여러 ETF에
-            나눠 시장가로 매수해요(오버슈팅 없이 딱 필요한 만큼씩, 예산 소진까지 반복).
-          </p>
           <div className="row" style={{ marginTop: 8 }}>
             <Num label="하루 적립 금액(원)" value={cfg.daily_budget_krw} step={10000} onSave={(v) => onPatch({ daily_budget_krw: v })} />
           </div>
-          <p className="muted" style={{ marginTop: 14, marginBottom: 4 }}>
-            아래 두 값은 <b style={{ color: 'var(--txt)' }}>백테스트 시뮬레이션에만</b> 쓰여요.
-            실제 자동/수동 적립은 항상 시장가 그리디 매수라 영향 없어요.
-          </p>
-          <div className="row" style={{ marginTop: 8 }}>
+          <div className="row" style={{ marginTop: 14 }}>
             <Num label="지정가 할인(%)" value={cfg.discount_pct * 100} step={0.1} min={0} onSave={(v) => onPatch({ discount_pct: Math.max(0, v) / 100 })} />
             <Num label="시장가 전환(일)" value={cfg.fallback_after_misses} onSave={(v) => onPatch({ fallback_after_misses: v })} />
           </div>
