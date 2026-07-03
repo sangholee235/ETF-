@@ -148,9 +148,13 @@ async def _run(ws_url: str, token: str, broker: str) -> None:
                         _status["lastError"] = None
                         backoff = 1
                         # 주문체결(00) + 현물잔고(04) 실시간 등록 (item 빈값 = 내 계좌 전체)
+                        # 명세 예제가 각각 단일 type 으로 등록하는 형태라, 한 항목에 합치지 않고 분리 등록
                         await ws.send(json.dumps({
                             "trnm": "REG", "grp_no": "1", "refresh": "1",
-                            "data": [{"item": [""], "type": ["00", "04"]}],
+                            "data": [
+                                {"item": [""], "type": ["00"]},
+                                {"item": [""], "type": ["04"]},
+                            ],
                         }))
                     elif trnm == "REG":
                         if msg.get("return_code") != 0:
