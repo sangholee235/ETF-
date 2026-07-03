@@ -320,7 +320,7 @@ function BrokerView({ broker }: { broker: string }) {
         </div>
         <div className="sched-field sched-row">
           <span className="muted">🕘 시작 시점</span>
-          <span style={{ fontWeight: 700 }}>장 개장 직후 ({cfg.schedule_time})</span>
+          <span style={{ fontWeight: 700 }}>장 개장 직후 (09:05)</span>
         </div>
         <p className="muted" style={{ marginTop: -4, marginBottom: 0 }}>
           그리디 매수는 예산을 다 쓸 때까지 알아서 반복돼서 시작 시각은 결과에 큰 영향 없어요 — 동시호가 안정화를 위해 개장 5분 후로 고정.
