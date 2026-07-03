@@ -199,8 +199,10 @@ body.hide-assets .money {
 }
 .hide-toggle {
   position: absolute; top: 16px; right: 16px;
-  font-size: 16px; padding: 4px 8px; line-height: 1;
+  font-size: 12.5px; font-weight: 600; padding: 6px 12px; line-height: 1;
+  background: #2a2a33; color: var(--txt2); border-radius: 8px;
 }
+.hide-toggle:hover { background: #34343e; filter: none; }
 
 /* 자산 요약 히어로 */
 .hero { background: linear-gradient(135deg, #1e1e24 0%, #1b2230 100%); position: relative; }

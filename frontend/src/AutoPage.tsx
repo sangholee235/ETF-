@@ -166,9 +166,9 @@ function BrokerView({ broker }: { broker: string }) {
       {/* ───────── 1. 지금 내 자산 ───────── */}
       <StepHead n={1} title="지금 내 자산" sub="무엇을 · 얼마 비중으로 갖고 있나" />
       <section className="card span2 hero">
-        <button className="ghost hide-toggle" onClick={() => setHideAssets((v) => !v)}
+        <button className="hide-toggle" onClick={() => setHideAssets((v) => !v)}
                 title={hideAssets ? '자산 표시' : '자산 가리기'}>
-          {hideAssets ? '🙈' : '👁'}
+          {hideAssets ? '표시' : '가리기'}
         </button>
         <div className="hero-main">
           <div className="muted">평가자산 (KRW)</div>
