@@ -191,8 +191,19 @@ tbody tr.selected td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
   100% { background-position: -200% 0; }
 }
 
+/* 자산 가리기 (프라이버시 모드) */
+body.hide-assets .money {
+  filter: blur(7px);
+  user-select: none;
+  transition: filter 0.15s;
+}
+.hide-toggle {
+  position: absolute; top: 16px; right: 16px;
+  font-size: 16px; padding: 4px 8px; line-height: 1;
+}
+
 /* 자산 요약 히어로 */
-.hero { background: linear-gradient(135deg, #1e1e24 0%, #1b2230 100%); }
+.hero { background: linear-gradient(135deg, #1e1e24 0%, #1b2230 100%); position: relative; }
 .hero-main { margin-bottom: 18px; }
 .hero-amount { font-size: clamp(26px, 8vw, 34px); font-weight: 800; letter-spacing: -0.03em; margin-top: 4px; word-break: keep-all; }
 .hero-amount .won { font-size: 18px; font-weight: 600; color: var(--muted); margin-left: 3px; }

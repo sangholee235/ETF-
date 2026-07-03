@@ -66,7 +66,7 @@ export default function HoldingsDonut({ holdings }: { holdings: Holdings | null 
             })}
           </g>
           <text x="50%" y="46%" textAnchor="middle" className="donut-total-label">평가자산</text>
-          <text x="50%" y="58%" textAnchor="middle" className="donut-total">{fmt(total)}원</text>
+          <text x="50%" y="58%" textAnchor="middle" className="donut-total money">{fmt(total)}원</text>
         </svg>
 
         <ul className="donut-legend">
@@ -75,7 +75,7 @@ export default function HoldingsDonut({ holdings }: { holdings: Holdings | null 
               <i style={{ background: s.color }} />
               <span className="nm">{s.name} <span className="muted">{s.symbol}</span></span>
               <span className="pc">{(s.pct * 100).toFixed(1)}%</span>
-              <span className="amt muted">{fmt(s.krw)}원</span>
+              <span className="amt muted money">{fmt(s.krw)}원</span>
             </li>
           ))}
         </ul>

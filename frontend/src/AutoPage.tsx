@@ -61,6 +61,13 @@ function BrokerView({ broker }: { broker: string }) {
   const [trades, setTrades] = useState<Order[]>([])
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
+  const [hideAssets, setHideAssets] = useState(() => localStorage.getItem('hideAssets') === '1')
+
+  useEffect(() => {
+    document.body.classList.toggle('hide-assets', hideAssets)
+    localStorage.setItem('hideAssets', hideAssets ? '1' : '0')
+    return () => { document.body.classList.remove('hide-assets') }
+  }, [hideAssets])
 
   // 전부 병렬로 쏘되, 각자 도착하는 대로 반영 (전체 대기 X).
   // → 가벼운 봇 상태가 오면 스켈레톤이 바로 걷히고, 무거운 거래내역(다일자 스캔)은 나중에 채워짐.
@@ -159,18 +166,22 @@ function BrokerView({ broker }: { broker: string }) {
       {/* ───────── 1. 지금 내 자산 ───────── */}
       <StepHead n={1} title="지금 내 자산" sub="무엇을 · 얼마 비중으로 갖고 있나" />
       <section className="card span2 hero">
+        <button className="ghost hide-toggle" onClick={() => setHideAssets((v) => !v)}
+                title={hideAssets ? '자산 표시' : '자산 가리기'}>
+          {hideAssets ? '🙈' : '👁'}
+        </button>
         <div className="hero-main">
           <div className="muted">평가자산 (KRW)</div>
-          <div className="hero-amount">{fmt(holdings?.marketValue.amount.krw)}<span className="won">원</span></div>
+          <div className="hero-amount money">{fmt(holdings?.marketValue.amount.krw)}<span className="won">원</span></div>
           {holdings && (
-            <div className={`hero-pl ${sign(holdings.profitLoss.amount.krw)}`}>
+            <div className={`hero-pl money ${sign(holdings.profitLoss.amount.krw)}`}>
               {Number(holdings.profitLoss.amount.krw) >= 0 ? '▲' : '▼'} {fmt(Math.abs(Number(holdings.profitLoss.amount.krw)))}원 ({pct(holdings.profitLoss.rate)})
             </div>
           )}
         </div>
         <div className="hero-sub">
-          <Stat label="계좌번호" value={account?.accountNo ?? '-'} />
-          <Stat label="매수가능(KRW)" value={fmt(bp?.cashBuyingPower) + '원'} />
+          <Stat label="계좌번호" value={account?.accountNo ?? '-'} money />
+          <Stat label="매수가능(KRW)" value={fmt(bp?.cashBuyingPower) + '원'} money />
           <Stat label="보유 종목수" value={(holdings?.items.length ?? 0) + '개'} />
         </div>
       </section>
@@ -234,8 +245,8 @@ function BrokerView({ broker }: { broker: string }) {
                  onBlur={(e) => e.target.value !== cfg.schedule_time && patch({ schedule_time: e.target.value })} />
         </label>
         <div className="strat-stats">
-          <Stat label="누적 투입" value={fmt(realInvested) + '원'} />
-          <Stat label="보유 수량" value={fmt(realQty) + '주'} />
+          <Stat label="누적 투입" value={fmt(realInvested) + '원'} money />
+          <Stat label="보유 수량" value={fmt(realQty) + '주'} money />
           <Stat label="연속 미체결" value={`${st.consecutiveMisses} / ${cfg.fallback_after_misses}일`} />
         </div>
         {msg && <p className="muted" style={{ marginTop: 8 }}>{msg}</p>}
@@ -363,11 +374,11 @@ function HoldingsTable({ holdings }: { holdings: Holdings | null }) {
                 return (
                   <tr key={it.symbol}>
                     <td style={{ textAlign: 'left' }}>{it.name} <span className="muted">{it.symbol}</span></td>
-                    <td>{fmt(it.quantity)}</td>
-                    <td>{fmt(it.averagePurchasePrice)}</td>
+                    <td className="money">{fmt(it.quantity)}</td>
+                    <td className="money">{fmt(it.averagePurchasePrice)}</td>
                     <td>{fmt(it.lastPrice)}</td>
-                    <td>{fmt(it.marketValue?.amount)}</td>
-                    <td className={s}>{pl != null && Number(pl) >= 0 ? '▲' : '▼'} {fmt(pl != null ? Math.abs(Number(pl)) : null)}</td>
+                    <td className="money">{fmt(it.marketValue?.amount)}</td>
+                    <td className={`money ${s}`}>{pl != null && Number(pl) >= 0 ? '▲' : '▼'} {fmt(pl != null ? Math.abs(Number(pl)) : null)}</td>
                     <td className={s}>{pct(it.profitLoss?.rate)}</td>
                   </tr>
                 )
@@ -429,8 +440,8 @@ function StepHead({ n, title, sub }: { n: number; title: string; sub: string }) 
   )
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
-  return <div className="stat"><div className="muted">{label}</div><div className="big">{value}</div></div>
+function Stat({ label, value, money }: { label: string; value: string; money?: boolean }) {
+  return <div className="stat"><div className="muted">{label}</div><div className={`big${money ? ' money' : ''}`}>{value}</div></div>
 }
 
 function NextBuy({ preview, dryRun, onRun, busy }: {
@@ -463,8 +474,8 @@ function NextBuy({ preview, dryRun, onRun, busy }: {
         </div>
         <div className="nb-cost">
           <div className="muted">{preview.estCost != null ? '예상 비용' : '1주 가격'}</div>
-          <div className="big">{fmt(preview.estCost ?? preview.lastPrice)}원</div>
-          {preview.cashBuyingPower != null && <div className="muted" style={{ fontSize: 12 }}>매수가능 {fmt(preview.cashBuyingPower)}원</div>}
+          <div className="big money">{fmt(preview.estCost ?? preview.lastPrice)}원</div>
+          {preview.cashBuyingPower != null && <div className="muted money" style={{ fontSize: 12 }}>매수가능 {fmt(preview.cashBuyingPower)}원</div>}
         </div>
       </div>
       {!ok && preview.blockReason && <p className="muted" style={{ marginTop: 8 }}>지금 실행 시: <b style={{ color: 'var(--txt)' }}>{preview.blockReason}</b></p>}
