@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from './api'
 import HoldingsDonut from './HoldingsDonut'
 import PortfolioPanel from './PortfolioPanel'
@@ -217,7 +217,12 @@ function BrokerView({ broker }: { broker: string }) {
         </button>
         <div className="hero-main">
           <div className="muted">평가자산 (KRW)</div>
-          <div className="hero-amount money">{fmt(holdings?.marketValue.amount.krw)}<span className="won">원</span></div>
+          <div className="hero-amount money">
+            {holdings
+              ? <AnimatedNumber value={Number(holdings.marketValue.amount.krw)} format={(n) => Math.round(n).toLocaleString()} />
+              : '-'}
+            <span className="won">원</span>
+          </div>
           {holdings && (
             <div className={`hero-pl money ${sign(holdings.profitLoss.amount.krw)}`}>
               {Number(holdings.profitLoss.amount.krw) >= 0 ? '▲' : '▼'} {fmt(Math.abs(Number(holdings.profitLoss.amount.krw)))}원 ({pct(holdings.profitLoss.rate)})
@@ -421,9 +426,12 @@ function HoldingsTable({ holdings }: { holdings: Holdings | null }) {
                     <td style={{ textAlign: 'left' }}>{it.name} <span className="muted">{it.symbol}</span></td>
                     <td className="money">{fmt(it.quantity)}</td>
                     <td className="money">{fmt(it.averagePurchasePrice)}</td>
-                    <td>{fmt(it.lastPrice)}</td>
-                    <td className="money">{fmt(it.marketValue?.amount)}</td>
-                    <td className={`money ${s}`}>{pl != null && Number(pl) >= 0 ? '▲' : '▼'} {fmt(pl != null ? Math.abs(Number(pl)) : null)}</td>
+                    <td><AnimatedNumber value={Number(it.lastPrice) || 0} format={(n) => Math.round(n).toLocaleString()} /></td>
+                    <td className="money"><AnimatedNumber value={Number(it.marketValue?.amount) || 0} format={(n) => Math.round(n).toLocaleString()} /></td>
+                    <td className={`money ${s}`}>
+                      {pl != null && Number(pl) >= 0 ? '▲' : '▼'}{' '}
+                      <AnimatedNumber value={Math.abs(Number(pl) || 0)} format={(n) => Math.round(n).toLocaleString()} />
+                    </td>
                     <td className={s}>{pct(it.profitLoss?.rate)}</td>
                   </tr>
                 )
@@ -434,6 +442,35 @@ function HoldingsTable({ holdings }: { holdings: Holdings | null }) {
       )}
     </section>
   )
+}
+
+/** 값이 바뀔 때 이전→새 값으로 굴러가듯(오도미터) 애니메이션. 첫 마운트는 애니메이션 없이 즉시 표시. */
+function AnimatedNumber({ value, format }: { value: number; format: (n: number) => string }) {
+  const [display, setDisplay] = useState(value)
+  const prevValue = useRef(value)
+  const mounted = useRef(false)
+  const rafRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    if (!mounted.current) { mounted.current = true; prevValue.current = value; setDisplay(value); return }
+    const from = prevValue.current
+    const to = value
+    if (from === to) return
+    if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
+    const duration = 500
+    const start = performance.now()
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - start) / duration)
+      const eased = 1 - Math.pow(1 - t, 3)   // ease-out
+      setDisplay(from + (to - from) * eased)
+      if (t < 1) rafRef.current = requestAnimationFrame(tick)
+      else prevValue.current = to
+    }
+    rafRef.current = requestAnimationFrame(tick)
+    return () => { if (rafRef.current != null) cancelAnimationFrame(rafRef.current) }
+  }, [value])
+
+  return <>{format(display)}</>
 }
 
 function Skel({ w, h = 16, r = 6 }: { w: number | string; h?: number; r?: number }) {
