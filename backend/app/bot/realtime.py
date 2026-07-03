@@ -42,6 +42,11 @@ _FID_BALANCE = {
     "8019": "profitRate",     # 손익율(%)
 }
 
+# 주식체결(type '0B') 실시간 FID 맵 — 체결가만 확실히 매핑 (나머지는 호가/거래량 등 미확인이라 제외)
+_FID_TICK = {
+    "10": "currentPrice",     # 현재가 (체결가, 부호 포함)
+}
+
 
 class _Hub:
     """SSE 구독자(asyncio.Queue) 집합. 실시간 이벤트를 전체에 fan-out."""
@@ -68,9 +73,10 @@ hub = _Hub()
 _task: asyncio.Task | None = None
 _status: dict[str, Any] = {
     "connected": False, "lastError": None, "broker": None,
-    "eventCounts": {"00": 0, "04": 0},   # 수신 카운트 (진단용: 소켓이 실제로 데이터를 받는지 확인)
-    "lastEventAt": {"00": None, "04": None},
+    "eventCounts": {"00": 0, "04": 0, "0B": 0},   # 수신 카운트 (진단용)
+    "lastEventAt": {"00": None, "04": None, "0B": None},
     "lastEventType": None,
+    "tickSymbols": [],   # 주식체결(0B) 구독 중인 보유 종목코드
 }
 
 
@@ -106,6 +112,15 @@ def _normalize_balance(values: dict) -> dict:
     return out
 
 
+def _normalize_tick(symbol: str, values: dict) -> dict:
+    """주식체결(0B) values(FID) → 읽기 쉬운 dict. item(종목코드)은 별도로 받아 붙인다."""
+    out: dict[str, Any] = {"symbol": symbol.lstrip("A")}
+    for fid, key in _FID_TICK.items():
+        if fid in values:
+            out[key] = str(values[fid]).replace("+", "").replace("-", "").strip()
+    return out
+
+
 async def _maybe_notify_fill(ev: dict) -> None:
     """실제 '체결'일 때만 디스코드 알림. 접수/확인 등은 무시. 이벤트 루프는 안 막음."""
     status = str(ev.get("orderStatus") or "")
@@ -128,7 +143,16 @@ async def _maybe_notify_fill(ev: dict) -> None:
     loop.run_in_executor(None, notify.discord, msg)   # fire-and-forget
 
 
-async def _run(ws_url: str, token: str, broker: str) -> None:
+def _held_symbols(kw) -> list[str]:
+    """보유 종목코드 목록 (주식체결 0B 구독용). 실패하면 빈 목록(00/04 만 등록)."""
+    try:
+        data = kw.get_holdings()
+        return [it["symbol"] for it in (data.get("items") or []) if it.get("symbol")]
+    except Exception:
+        return []
+
+
+async def _run(ws_url: str, token: str, broker: str, kw) -> None:
     import websockets
 
     backoff = 1
@@ -147,15 +171,17 @@ async def _run(ws_url: str, token: str, broker: str) -> None:
                         _status["connected"] = True
                         _status["lastError"] = None
                         backoff = 1
-                        # 주문체결(00) + 현물잔고(04) 실시간 등록 (item 빈값 = 내 계좌 전체)
-                        # 명세 예제가 각각 단일 type 으로 등록하는 형태라, 한 항목에 합치지 않고 분리 등록
-                        await ws.send(json.dumps({
-                            "trnm": "REG", "grp_no": "1", "refresh": "1",
-                            "data": [
-                                {"item": [""], "type": ["00"]},
-                                {"item": [""], "type": ["04"]},
-                            ],
-                        }))
+                        # 주문체결(00) + 현물잔고(04) + 보유종목 주식체결(0B, 실제 체결가 틱) 등록.
+                        # 명세 예제가 각각 단일 type 으로 등록하는 형태라, 한 항목에 합치지 않고 분리 등록.
+                        symbols = _held_symbols(kw)
+                        _status["tickSymbols"] = symbols
+                        data = [
+                            {"item": [""], "type": ["00"]},
+                            {"item": [""], "type": ["04"]},
+                        ]
+                        if symbols:
+                            data.append({"item": symbols, "type": ["0B"]})
+                        await ws.send(json.dumps({"trnm": "REG", "grp_no": "1", "refresh": "1", "data": data}))
                     elif trnm == "REG":
                         if msg.get("return_code") != 0:
                             _status["lastError"] = f"REG 실패: {msg.get('return_msg')}"
@@ -168,7 +194,7 @@ async def _run(ws_url: str, token: str, broker: str) -> None:
                         now_iso = datetime.now(timezone(timedelta(hours=9))).isoformat()
                         for d in msg.get("data", []) or []:
                             t = d.get("type")
-                            if t in ("00", "04"):
+                            if t in ("00", "04", "0B"):
                                 _status["eventCounts"][t] += 1
                                 _status["lastEventAt"][t] = now_iso
                                 _status["lastEventType"] = t
@@ -180,6 +206,9 @@ async def _run(ws_url: str, token: str, broker: str) -> None:
                             elif t == "04":
                                 bal = _normalize_balance(d.get("values", {}) or {})
                                 hub.publish({"event": "balance", "data": bal})
+                            elif t == "0B":
+                                tick = _normalize_tick(d.get("item") or "", d.get("values", {}) or {})
+                                hub.publish({"event": "tick", "data": tick})
         except asyncio.CancelledError:
             raise
         except Exception as e:  # 연결 끊김/오류 → 지수 백오프 재연결
@@ -205,7 +234,7 @@ def start() -> None:
         _status["lastError"] = f"실시간 시작 실패: {e}"
         return
     _status["broker"] = "kiwoom"
-    _task = asyncio.create_task(_run(ws_url, token, "kiwoom"))
+    _task = asyncio.create_task(_run(ws_url, token, "kiwoom", kw))
 
 
 async def stop() -> None:

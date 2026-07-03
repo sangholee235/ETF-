@@ -21,6 +21,48 @@ const sign = (v: string | null | undefined) =>
 
 const LABEL: Record<string, string> = { toss: '토스증권', kiwoom: '키움증권' }
 
+/** 실시간 이벤트(잔고/체결가)로 보유 종목 1건을 병합 갱신 + 총합 재계산. 새로고침 없이 화면 반영용. */
+function mergeHoldingUpdate(
+  setHoldings: React.Dispatch<React.SetStateAction<Holdings | null>>,
+  ev: { symbol?: string; name?: string; currentPrice?: string; quantity?: string; avgPrice?: string; purchaseAmount?: string },
+) {
+  setHoldings((prev) => {
+    if (!prev) return prev
+    let found = false
+    const items = prev.items.map((it) => {
+      if (it.symbol !== ev.symbol) return it
+      found = true
+      const qty = Number(ev.quantity ?? it.quantity)
+      const cur = Number(ev.currentPrice ?? it.lastPrice)
+      const purchase = Number(ev.purchaseAmount ?? it.marketValue.purchaseAmount)
+      const amount = qty * cur
+      const plAmount = amount - purchase
+      const rate = purchase > 0 ? plAmount / purchase : 0
+      return {
+        ...it,
+        name: ev.name ?? it.name,
+        quantity: String(qty),
+        lastPrice: String(cur),
+        averagePurchasePrice: ev.avgPrice ?? it.averagePurchasePrice,
+        marketValue: { ...it.marketValue, purchaseAmount: String(purchase), amount: String(amount) },
+        profitLoss: { ...it.profitLoss, amount: String(plAmount), rate: String(rate) },
+      }
+    })
+    if (!found) return prev
+    const totalAmount = items.reduce((s, it) => s + Number(it.marketValue.amount || 0), 0)
+    const totalPurchase = items.reduce((s, it) => s + Number(it.marketValue.purchaseAmount || 0), 0)
+    const totalPl = totalAmount - totalPurchase
+    return {
+      ...prev, items,
+      marketValue: { amount: { ...prev.marketValue.amount, krw: String(totalAmount) } },
+      profitLoss: {
+        amount: { ...prev.profitLoss.amount, krw: String(totalPl) },
+        rate: String(totalPurchase > 0 ? totalPl / totalPurchase : 0),
+      },
+    }
+  })
+}
+
 /** ETF 자동 적립 메인. ①보유 비중 → ②목표 비중 → ③전략 상태 → ④실행 기록 흐름. */
 export default function AutoPage() {
   const [brokers, setBrokers] = useState<string[]>([])
@@ -112,49 +154,21 @@ function BrokerView({ broker }: { broker: string }) {
         load()
       } catch { /* ignore */ }
     })
-    // 실시간 잔고(현재가 변동): 새로고침 없이 평가금액·손익을 즉시 갱신
+    // 실시간 잔고(주문/정산 시): 새로고침 없이 평가금액·손익을 즉시 갱신
     es.addEventListener('balance', (e) => {
       try {
         const b = JSON.parse((e as MessageEvent).data) as {
           symbol?: string; name?: string; currentPrice?: string; quantity?: string
-          avgPrice?: string; purchaseAmount?: string; profitRate?: string
+          avgPrice?: string; purchaseAmount?: string
         }
-        if (!b.symbol) return
-        setHoldings((prev) => {
-          if (!prev) return prev
-          let found = false
-          const items = prev.items.map((it) => {
-            if (it.symbol !== b.symbol) return it
-            found = true
-            const qty = Number(b.quantity ?? it.quantity)
-            const cur = Number(b.currentPrice ?? it.lastPrice)
-            const purchase = Number(b.purchaseAmount ?? it.marketValue.purchaseAmount)
-            const amount = qty * cur
-            const plAmount = amount - purchase
-            const rate = purchase > 0 ? plAmount / purchase : 0
-            return {
-              ...it,
-              name: b.name ?? it.name,
-              quantity: String(qty),
-              lastPrice: String(cur),
-              averagePurchasePrice: b.avgPrice ?? it.averagePurchasePrice,
-              marketValue: { ...it.marketValue, purchaseAmount: String(purchase), amount: String(amount) },
-              profitLoss: { ...it.profitLoss, amount: String(plAmount), rate: String(rate) },
-            }
-          })
-          if (!found) return prev
-          const totalAmount = items.reduce((s, it) => s + Number(it.marketValue.amount || 0), 0)
-          const totalPurchase = items.reduce((s, it) => s + Number(it.marketValue.purchaseAmount || 0), 0)
-          const totalPl = totalAmount - totalPurchase
-          return {
-            ...prev, items,
-            marketValue: { amount: { ...prev.marketValue.amount, krw: String(totalAmount) } },
-            profitLoss: {
-              amount: { ...prev.profitLoss.amount, krw: String(totalPl) },
-              rate: String(totalPurchase > 0 ? totalPl / totalPurchase : 0),
-            },
-          }
-        })
+        if (b.symbol) mergeHoldingUpdate(setHoldings, b)
+      } catch { /* ignore */ }
+    })
+    // 실시간 체결가(주식체결 0B): 보유 종목 시세가 바뀔 때마다 평가금액 재계산
+    es.addEventListener('tick', (e) => {
+      try {
+        const t = JSON.parse((e as MessageEvent).data) as { symbol?: string; currentPrice?: string }
+        if (t.symbol) mergeHoldingUpdate(setHoldings, t)
       } catch { /* ignore */ }
     })
     return () => es.close()
