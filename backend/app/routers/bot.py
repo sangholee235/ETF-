@@ -35,6 +35,17 @@ def realtime_status():
     return realtime.status()
 
 
+@router.get("/market-status")
+def market_status(broker: str | None = None):
+    """지금 국내 정규장이 열려 있는지 (대시보드 배지용)."""
+    from ..bot.guardrails import _is_market_open
+    client = get_client(broker)
+    try:
+        return {"open": _is_market_open(client)}
+    except Exception:
+        return {"open": False}
+
+
 @router.get("/stream")
 async def stream():
     """실시간 체결통보 SSE 스트림 (프론트 EventSource 구독용)."""

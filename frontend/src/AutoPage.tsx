@@ -99,6 +99,7 @@ function BrokerView({ broker }: { broker: string }) {
   const [bp, setBp] = useState<BuyingPower | null>(null)
   const [sched, setSched] = useState<Awaited<ReturnType<typeof api.botScheduler>> | null>(null)
   const [rt, setRt] = useState<Awaited<ReturnType<typeof api.botRealtime>> | null>(null)
+  const [marketOpen, setMarketOpen] = useState<boolean | null>(null)
   const [openOrders, setOpenOrders] = useState<Order[]>([])
   const [trades, setTrades] = useState<Order[]>([])
   const [msg, setMsg] = useState('')
@@ -134,10 +135,12 @@ function BrokerView({ broker }: { broker: string }) {
     const t = setInterval(() => {
       api.botScheduler().then(setSched).catch(() => {})
       api.botRealtime().then(setRt).catch(() => {})
+      api.marketStatus(broker).then((r) => setMarketOpen(r.open)).catch(() => {})
     }, 15000)
     api.botRealtime().then(setRt).catch(() => {})
+    api.marketStatus(broker).then((r) => setMarketOpen(r.open)).catch(() => {})
     return () => clearInterval(t)
-  }, [load])
+  }, [load, broker])
 
   // 실시간 체결통보(SSE): 체결 들어오면 즉시 화면 갱신 + 토스트
   useEffect(() => {
@@ -268,6 +271,11 @@ function BrokerView({ broker }: { broker: string }) {
                 {cfg.enabled
                   ? cfg.schedule_enabled ? '자동 적립 작동 중' : '자동 OFF (수동 적립만)'
                   : '봇 정지됨 (킬스위치)'}
+                {marketOpen != null && (
+                  <span className={`market-badge ${marketOpen ? 'open' : 'closed'}`}>
+                    {marketOpen ? '● 장 운영중' : '○ 장 마감'}
+                  </span>
+                )}
               </div>
               <div className="muted">
                 {cfg.schedule_enabled
