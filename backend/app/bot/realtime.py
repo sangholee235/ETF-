@@ -66,7 +66,12 @@ class _Hub:
 hub = _Hub()
 
 _task: asyncio.Task | None = None
-_status: dict[str, Any] = {"connected": False, "lastError": None, "broker": None}
+_status: dict[str, Any] = {
+    "connected": False, "lastError": None, "broker": None,
+    "eventCounts": {"00": 0, "04": 0},   # 수신 카운트 (진단용: 소켓이 실제로 데이터를 받는지 확인)
+    "lastEventAt": {"00": None, "04": None},
+    "lastEventType": None,
+}
 
 
 def _normalize(values: dict) -> dict:
@@ -147,16 +152,28 @@ async def _run(ws_url: str, token: str, broker: str) -> None:
                             "trnm": "REG", "grp_no": "1", "refresh": "1",
                             "data": [{"item": [""], "type": ["00", "04"]}],
                         }))
+                    elif trnm == "REG":
+                        if msg.get("return_code") != 0:
+                            _status["lastError"] = f"REG 실패: {msg.get('return_msg')}"
+                        else:
+                            _status["lastError"] = None
                     elif trnm == "PING":
                         await ws.send(raw)               # 받은 그대로 echo
                     elif trnm == "REAL":
+                        from datetime import datetime, timezone, timedelta
+                        now_iso = datetime.now(timezone(timedelta(hours=9))).isoformat()
                         for d in msg.get("data", []) or []:
-                            if d.get("type") == "00":
+                            t = d.get("type")
+                            if t in ("00", "04"):
+                                _status["eventCounts"][t] += 1
+                                _status["lastEventAt"][t] = now_iso
+                                _status["lastEventType"] = t
+                            if t == "00":
                                 ev = _normalize(d.get("values", {}) or {})
                                 ev["realtimeName"] = d.get("name")
                                 hub.publish({"event": "fill", "data": ev})
                                 await _maybe_notify_fill(ev)
-                            elif d.get("type") == "04":
+                            elif t == "04":
                                 bal = _normalize_balance(d.get("values", {}) or {})
                                 hub.publish({"event": "balance", "data": bal})
         except asyncio.CancelledError:
