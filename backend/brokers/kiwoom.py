@@ -324,6 +324,19 @@ class KiwoomBroker(Broker):
             "orderableAmount": cash,
             "withdrawableAmount": _i(data.get("pymn_alow_amt")),
         }
+    def get_order_affordable_qty(self, symbol: str, price: int) -> int:
+        """kt00010 주문인출가능금액요청 → 이 종목을 이 가격에 실제로 몇 주 살 수 있는지.
+
+        kt00001(예수금)의 '주문가능금액'은 실제 매수 시 요구되는 증거금(매수증거금)과
+        달라 종종 '충분해 보이는데 거부'되는 경우가 있었음 — 그래서 주문 직전에
+        이 TR로 정확한 수량을 한 번 더 확인해 클램프한다.
+        profa_100ord_alowq = 100%(현금, 무증거금대출) 기준 실제 주문가능수량."""
+        data = self._request("kt00010", "/api/dostk/acnt", body={
+            "io_amt": "", "stk_cd": symbol, "trde_tp": "2",
+            "trde_qty": "", "uv": str(int(price)), "exp_buy_unp": "",
+        })
+        return int(_i(data.get("profa_100ord_alowq")))
+
     def get_sellable_quantity(self, symbol: str, account_seq: int | None = None) -> dict:
         raise NotImplementedError(_TODO)
     def get_commissions(self, account_seq: int | None = None) -> list[dict]: raise NotImplementedError(_TODO)

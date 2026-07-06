@@ -80,18 +80,37 @@ def run_once(client: TossClient | None = None, broker: str | None = None,
         return _summary(cfg, state, [log])
 
     # 4. 계획 순서대로 시장가 매수 실행 (그리디라 지정가 대기 없이 즉시 체결 확정 필요)
+    #    LIVE 는 주문 직전 실제 주문가능수량으로 한 번 더 클램프한다 — 매수가능금액
+    #    조회(예수금 기준)와 실제 주문 시 요구되는 증거금이 달라 '충분해 보이는데
+    #    거부'되는 경우가 있어서, 그 브로커가 지원하면(get_order_affordable_qty)
+    #    확정 수량을 다시 확인한다.
     logs = []
     spent = 0
     for i, item in enumerate(plan):
+        qty = item["quantity"]
+        if not cfg.dry_run:
+            check_qty = getattr(client, "get_order_affordable_qty", None)
+            if check_qty is not None:
+                try:
+                    real_max = check_qty(item["symbol"], item["price"])
+                    qty = min(qty, real_max)
+                except Exception:
+                    pass  # 확인 실패하면 원래 계획 수량으로 시도(기존 동작 유지)
+        if qty < 1:
+            log = executor.execute(client, cfg, state,
+                                   _skip(f"{item['symbol']} 실제 주문가능수량 부족 — 이번엔 건너뜀"))
+            state.add_log(log); logs.append(log)
+            continue
+
         d = Decision(
-            "MARKET_BUY", item["quantity"], None,
-            f"그리디 리밸런싱: {item['symbol']} {item['quantity']}주 (목표비중 맞춤, {item['price']:,}원 기준)",
-            item["estCost"], item["symbol"],
+            "MARKET_BUY", qty, None,
+            f"그리디 리밸런싱: {item['symbol']} {qty}주 (목표비중 맞춤, {item['price']:,}원 기준)",
+            item["price"] * qty, item["symbol"],
         )
         log = executor.execute(client, cfg, state, d, seq=i)
         if log.action == "MARKET_BUY":
-            _apply_optimistic_fill(state, log, item["price"], item["quantity"])
-            spent += item["price"] * item["quantity"]
+            _apply_optimistic_fill(state, log, item["price"], qty)
+            spent += item["price"] * qty
         state.add_log(log)
         logs.append(log)
 
