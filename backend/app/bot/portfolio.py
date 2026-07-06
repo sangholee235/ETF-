@@ -116,6 +116,13 @@ def select_underweight(cfg: BotConfig, state: BotState,
     return best["symbol"], best.get("name", best["symbol"])
 
 
+# 시장가 매수는 체결가가 어디로 튈지 몰라, 증권사가 상한가(현재가 +30%, KRX 가격제한폭)
+# 기준으로 증거금을 미리 잡아둔다. 그래서 현재가만 보고 수량을 정하면 실제로는
+# '매수증거금 부족'으로 거부될 수 있다(실사례로 확인됨) — 수량은 이 버퍼로 보수적으로
+# 계산하고, 실제 표시/비용은 진짜 현재가로 그대로 보여준다(사용자에게 부풀려 안 보임).
+_MARKET_ORDER_MARGIN_BUFFER = 1.3
+
+
 def plan_daily_buys(cfg: BotConfig, current_values: dict, prices: dict,
                     budget: int, max_iters: int = 30) -> list[dict]:
     """하루 예산을 목표 비중대로 그리디하게 여러 종목에 나눠 쓰는 매수 계획을 세운다.
@@ -124,6 +131,9 @@ def plan_daily_buys(cfg: BotConfig, current_values: dict, prices: dict,
     되는 데 필요한 금액만큼만 산다(오버슈팅 방지). 필요금액이 1주 값도 안 되면
     다음으로 부족한 종목을 시도하고, 아무도 부족하지 않으면(균형) 가장 덜 과대비중인
     종목을 1주씩 사서 예산을 남기지 않는다. 예산이 다하거나 1주도 못 살 때까지 반복.
+
+    수량은 시장가 증거금 버퍼(_MARKET_ORDER_MARGIN_BUFFER)를 적용해 보수적으로 계산해
+    '매수증거금 부족' 거부를 피한다.
 
     current_values: {symbol: 현재 평가금액}. prices: {symbol: 현재가}.
     반환: [{"symbol","quantity","price","estCost"}, ...] 실행 순서대로.
@@ -163,7 +173,7 @@ def plan_daily_buys(cfg: BotConfig, current_values: dict, prices: dict,
                 continue  # 진짜 부족(양수)인 것만 여기서 시도
             sym = p["symbol"]
             price = prices[sym]
-            qty = int(min(need, remaining) // price)
+            qty = int(min(need, remaining) // (price * _MARKET_ORDER_MARGIN_BUFFER))
             if qty >= 1:
                 chosen_sym = sym
                 break
@@ -173,7 +183,7 @@ def plan_daily_buys(cfg: BotConfig, current_values: dict, prices: dict,
             for p in ranked:
                 sym = p["symbol"]
                 price = prices[sym]
-                if price <= remaining:
+                if price * _MARKET_ORDER_MARGIN_BUFFER <= remaining:
                     chosen_sym, qty = sym, 1
                     break
             if chosen_sym is None:
