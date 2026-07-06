@@ -286,7 +286,7 @@ function BrokerView({ broker }: { broker: string }) {
               </div>
               <div className="muted">
                 {cfg.schedule_enabled
-                  ? `매 평일 ${cfg.schedule_time} 실행 · ${cfg.dry_run ? 'DRY_RUN(모의)' : 'LIVE(실주문)'}`
+                  ? `장중 10분마다(09:05~15:20) 확인 · ${cfg.dry_run ? 'DRY_RUN(모의)' : 'LIVE(실주문)'}`
                   : `버튼으로만 적립 · ${cfg.dry_run ? 'DRY_RUN(모의)' : 'LIVE(실주문)'}`}
               </div>
               <div className="sched-hb">
@@ -317,10 +317,6 @@ function BrokerView({ broker }: { broker: string }) {
               {cfg.enabled ? '봇 정지' : '봇 가동'}
             </button>
           </div>
-        </div>
-        <div className="sched-field sched-row">
-          <span className="muted">🕘 확인 주기</span>
-          <span style={{ fontWeight: 700 }}>장중 10분마다 (09:05~15:20)</span>
         </div>
         <div className="strat-stats">
           <Stat label="누적 투입" value={fmtRich(realInvested) + '원'} money />
