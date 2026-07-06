@@ -54,6 +54,11 @@ def execute(client: TossClient, cfg: BotConfig, state: BotState, d: Decision, se
     except TossApiError as e:
         log.action = "SKIP"
         log.reason = f"주문 실패: {e.code} {e.message}"
+    except RuntimeError as e:
+        # 키움 등 브로커가 거부(증거금 부족 등)를 RuntimeError 로 던지는 경우.
+        # 예전엔 여기서 안 잡혀 실행기록에 안 남고 조용히 위로 새던 버그가 있었음.
+        log.action = "SKIP"
+        log.reason = f"주문 실패: {e}"
     return log
 
 
