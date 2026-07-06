@@ -32,6 +32,7 @@ _last_fired: dict[str, str] = {}  # broker -> "broker YYYY-MM-DD HH:MM"
 _last_tick: datetime | None = None       # 스케줄러가 마지막으로 점검한 시각 (심장박동)
 _started_at: datetime | None = None
 _last_fired_at: dict[str, str] = {}       # broker -> 마지막 실제 실행 시각(ISO)
+_last_error: dict[str, str] = {}          # broker -> 마지막 실행 실패 사유 (진단용)
 
 
 def _should_check(now: datetime) -> bool:
@@ -55,14 +56,20 @@ def _loop() -> None:
             _last_tick = now                 # 매 점검마다 갱신 → "살아있음" 증거
             if _should_check(now):
                 for broker in available_brokers():
-                    cfg = BotConfig.load(broker)
-                    if not (cfg.schedule_enabled and cfg.enabled):
-                        continue
-                    key = f"{broker} {_stamp(now)}"  # 브로커별로 분당 1회만
-                    if _last_fired.get(broker) != key:
-                        _last_fired[broker] = key
-                        _last_fired_at[broker] = now.isoformat()
-                        run_once(broker=broker)
+                    # 브로커별로 개별 예외처리: 한 브로커(예: toss)가 실패해도
+                    # 다음 브로커(kiwoom)는 이번 틱에서 계속 시도돼야 한다.
+                    try:
+                        cfg = BotConfig.load(broker)
+                        if not (cfg.schedule_enabled and cfg.enabled):
+                            continue
+                        key = f"{broker} {_stamp(now)}"  # 브로커별로 분당 1회만
+                        if _last_fired.get(broker) != key:
+                            _last_fired[broker] = key
+                            _last_fired_at[broker] = now.isoformat()
+                            run_once(broker=broker)
+                            _last_error.pop(broker, None)
+                    except Exception as e:
+                        _last_error[broker] = str(e)
         except Exception:  # 스케줄러는 죽지 않게 모든 예외 흡수
             pass
         _stop.wait(30)  # 30초마다 점검
@@ -80,6 +87,7 @@ def heartbeat() -> dict:
         "secondsSinceTick": int((now - _last_tick).total_seconds()) if _last_tick else None,
         "startedAt": _started_at.isoformat() if _started_at else None,
         "lastFiredAt": dict(_last_fired_at),
+        "lastError": dict(_last_error),
         "now": now.isoformat(),
     }
 
