@@ -7,11 +7,12 @@
 
 순서:
 1. 직전 미체결 주문 체결 확인 -> 상태 갱신
-2. 오늘 '남은' 예산으로 그리디 매수 계획 수립 (목표비중 그대로, 여러 종목 가능)
-3. 가드레일 검증 (킬스위치/장운영시간/누적한도)
-4. 계획된 주문들을 순서대로 시장가 실행 (DRY_RUN/LIVE) — 매 건마다 계획을
+2. 오늘 남은 한도부터 확인(API 호출 없음) — 0이면 아래 API 호출 없이 바로 종료
+3. 오늘 '남은' 예산으로 그리디 매수 계획 수립 (목표비중 그대로, 여러 종목 가능)
+4. 가드레일 검증 (킬스위치/장운영시간/누적한도)
+5. 계획된 주문들을 순서대로 시장가 실행 (DRY_RUN/LIVE) — 매 건마다 계획을
    즉시 반영해 다음 판단에 쓰므로, 실행은 시장가로 해야 순서가 안 꼬인다.
-5. 오늘 쓴 금액 기록 + 상태/로그 저장
+6. 오늘 쓴 금액 기록 + 상태/로그 저장
 """
 
 from __future__ import annotations
@@ -52,26 +53,31 @@ def run_once(client: TossClient | None = None, broker: str | None = None,
         state.add_log(log); state.save()
         return _summary(cfg, state, [log])
 
-    # 2. 오늘 매수 계획 수립: '오늘 남은' 한도(이미 오늘 쓴 만큼 차감) 안에서 그리디하게
-    bp = _buying_power(client)
+    # 2. 오늘 남은 한도부터 먼저 확인(API 호출 없음, cfg/state만 봄) — 0이면 보유현황·
+    #    가격 조회 같은 API 호출 자체를 안 하고 바로 끝낸다. cfg 는 매번 파일에서 새로
+    #    읽으므로(캐시 없음), 장중에 한도를 늘리면 다음 체크에서 바로 반영된다.
     remaining_today = state.today_remaining_budget(cfg.daily_budget_krw)
+    if remaining_today <= 0:
+        log = executor.execute(client, cfg, state,
+                               _skip("오늘 하루 한도를 이미 다 썼습니다 — 내일 다시 시도"))
+        state.add_log(log); state.save()
+        return _summary(cfg, state, [log])
+
+    # 3. 오늘 매수 계획 수립: '오늘 남은' 한도(이미 오늘 쓴 만큼 차감) 안에서 그리디하게
+    bp = _buying_power(client)
     current_values = _holdings_values(client, cfg) or {}
     prices = _portfolio_prices(client, cfg)
     budget = min(remaining_today, bp) if bp is not None else remaining_today
     plan = plan_daily_buys(cfg, current_values, prices, budget) if budget > 0 else []
 
     if not plan:
-        if remaining_today <= 0:
-            reason = "오늘 하루 한도를 이미 다 썼습니다 — 내일 다시 시도"
-        elif budget <= 0 or not prices:
-            reason = "매수가능금액/오늘 남은 한도로 1주도 못 삽니다"
-        else:
-            reason = "오늘 살 게 없음 — 이미 목표 비중 도달"
+        reason = ("매수가능금액/오늘 남은 한도로 1주도 못 삽니다" if budget <= 0 or not prices
+                  else "오늘 살 게 없음 — 이미 목표 비중 도달")
         log = executor.execute(client, cfg, state, _skip(reason))
         state.add_log(log); state.save()
         return _summary(cfg, state, [log])
 
-    # 3. 가드레일 (킬스위치/장운영시간/누적한도) — 계획 총액 기준 1회 체크
+    # 4. 가드레일 (킬스위치/장운영시간/누적한도) — 계획 총액 기준 1회 체크
     total_cost = sum(item["estCost"] for item in plan)
     guard = guardrails.check(client, cfg, state, total_cost, buying_power=bp)
     if not guard.ok:
@@ -79,7 +85,7 @@ def run_once(client: TossClient | None = None, broker: str | None = None,
         state.add_log(log); state.save()
         return _summary(cfg, state, [log])
 
-    # 4. 계획 순서대로 시장가 매수 실행 (그리디라 지정가 대기 없이 즉시 체결 확정 필요)
+    # 5. 계획 순서대로 시장가 매수 실행 (그리디라 지정가 대기 없이 즉시 체결 확정 필요)
     #    주문 직전 재확인(kt00010 profa_100ord_alowq)은 필드 해석이 신용거래
     #    맥락이라 정상 계좌의 매수까지 잘못 막는 문제가 있어 되돌림 — 예수금
     #    기준 매수가능금액으로 바로 시도하고, 거부되면 executor 가 그 사유를
@@ -100,7 +106,7 @@ def run_once(client: TossClient | None = None, broker: str | None = None,
         state.add_log(log)
         logs.append(log)
 
-    # 5. 오늘 쓴 금액 기록 (다음 실행에서 '오늘 남은 한도' 계산에 반영됨)
+    # 6. 오늘 쓴 금액 기록 (다음 실행에서 '오늘 남은 한도' 계산에 반영됨)
     if spent > 0:
         state.record_today_spend(spent)
     state.last_trade_date = date.today().isoformat()
