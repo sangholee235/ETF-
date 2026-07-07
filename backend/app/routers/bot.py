@@ -152,13 +152,11 @@ def preview(broker: str | None = None):
         return {**base, "hasTarget": True, "action": "SKIP", "blockReason": f"미리보기 실패: {e}"}
 
     if not plan:
-        first = items[0]
         block = ("오늘 하루 한도를 이미 다 썼습니다 — 내일 다시 시도" if remaining_today <= 0
                  else "매수가능금액/오늘 남은 한도로 1주도 못 삽니다 — 입금이 필요합니다." if budget <= 0
                  else "오늘 살 게 없습니다 — 이미 목표 비중 도달.")
-        return {**base, "hasTarget": True, "symbol": first["symbol"], "name": first.get("name", first["symbol"]),
+        return {**base, "hasTarget": True, "symbol": None, "name": None,
                 "action": "SKIP", "willTrade": False, "cashBuyingPower": bp_cash,
-                "lastPrice": _current(client, first["symbol"]),
                 "plan": [],
                 "blockReason": block,
                 "warnings": []}
