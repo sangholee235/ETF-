@@ -63,6 +63,12 @@ def run_once(client: TossClient | None = None, broker: str | None = None,
         state.add_log(log); state.save()
         return _summary(cfg, state, [log])
 
+    # 2b. 오늘 이미 현금 부족으로 SKIP한 적 있으면 조용히 종료 (로그 없음).
+    #     입금이 들어오면 내일 아침에 자동으로 재시도한다.
+    today = date.today().isoformat()
+    if state.cash_exhausted_date == today:
+        return _summary(cfg, state, [])
+
     # 3. 오늘 매수 계획 수립: '오늘 남은' 한도(이미 오늘 쓴 만큼 차감) 안에서 그리디하게
     bp = _buying_power(client)
     current_values = _holdings_values(client, cfg) or {}
@@ -71,8 +77,11 @@ def run_once(client: TossClient | None = None, broker: str | None = None,
     plan = plan_daily_buys(cfg, current_values, prices, budget) if budget > 0 else []
 
     if not plan:
-        reason = ("매수가능금액/오늘 남은 한도로 1주도 못 삽니다" if budget <= 0 or not prices
+        cash_short = budget <= 0 or not prices
+        reason = ("매수가능금액/오늘 남은 한도로 1주도 못 삽니다" if cash_short
                   else "오늘 살 게 없음 — 이미 목표 비중 도달")
+        if cash_short:
+            state.cash_exhausted_date = today
         log = executor.execute(client, cfg, state, _skip(reason))
         state.add_log(log); state.save()
         return _summary(cfg, state, [log])
@@ -109,6 +118,7 @@ def run_once(client: TossClient | None = None, broker: str | None = None,
     # 6. 오늘 쓴 금액 기록 (다음 실행에서 '오늘 남은 한도' 계산에 반영됨)
     if spent > 0:
         state.record_today_spend(spent)
+        state.cash_exhausted_date = None  # 매수 성공 시 현금부족 억제 해제
     state.last_trade_date = date.today().isoformat()
     state.save()
     return _summary(cfg, state, logs)

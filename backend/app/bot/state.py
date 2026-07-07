@@ -47,6 +47,7 @@ class BotState:
     logs: list = field(default_factory=list)  # list[dict]
     today_budget_used_krw: int = 0    # 오늘 하루 한도 중 이미 쓴 금액 (날짜 바뀌면 리셋)
     today_budget_date: str | None = None
+    cash_exhausted_date: str | None = None  # 현금 부족으로 SKIP한 날 — 당일 재시도 억제용
 
     @classmethod
     def load(cls, broker: str | None = None) -> "BotState":
