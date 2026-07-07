@@ -215,7 +215,7 @@ def _summary(cfg: BotConfig, state: BotState, logs: list) -> dict:
     return {
         "mode": "DRY_RUN" if cfg.dry_run else "LIVE",
         "enabled": cfg.enabled,
-        "symbol": cfg.symbol,
+        "symbol": logs[-1].symbol if logs else None,
         "decision": decision,
         "filled": all(lg.filled for lg in buys) if buys else logs[-1].filled,
         "consecutiveMisses": state.consecutive_misses,
