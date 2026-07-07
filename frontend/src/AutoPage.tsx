@@ -106,6 +106,7 @@ function BrokerView({ broker }: { broker: string }) {
   const [marketOpen, setMarketOpen] = useState<boolean | null>(null)
   const [openOrders, setOpenOrders] = useState<Order[]>([])
   const [trades, setTrades] = useState<Order[]>([])
+  const [logTab, setLogTab] = useState<'bot' | 'open' | 'trades'>('bot')
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
   const [hideAssets, setHideAssets] = useState(() => {
@@ -363,63 +364,110 @@ function BrokerView({ broker }: { broker: string }) {
         )}
       </section>
 
-      {/* ───────── 4. 실행 기록 ───────── */}
-      <StepHead n={4} title="실행 기록" />
+      {/* ───────── 4. 실행 기록 (탭) ───────── */}
+      <StepHead title="실행 기록" />
       <section className="card span2">
-        <div className="table-scroll">
-          <table>
-            <thead><tr><th>시각</th><th>모드</th><th>종목</th><th>액션</th><th>가격</th><th>체결</th><th>사유</th></tr></thead>
-            <tbody>
-              {st.logs.length === 0 ? (
-                <tr><td colSpan={7} className="muted">아직 실행 기록 없음 — "지금 1회 적립"으로 시작</td></tr>
-              ) : (
-                [...st.logs].reverse().map((lg, i) => {
-                  const f = logFilled(lg)
-                  return (
-                  <tr key={i}>
-                    <td className="muted">{lg.ts.slice(0, 16).replace('T', ' ')}</td>
-                    <td><span style={{ color: lg.mode === 'LIVE' ? 'var(--up)' : 'var(--muted)' }}>{lg.mode}</span></td>
-                    <td>{lg.symbol ?? '-'}</td>
-                    <td>{actionKo(lg.action)}</td>
-                    <td>{fmt(lg.price)}</td>
-                    <td className={f == null ? 'muted' : f ? 'up' : 'down'}>{f == null ? '-' : f ? '체결' : '미체결'}</td>
-                    <td className="muted">{lg.reason}</td>
-                  </tr>
-                  )
-                })
-              )}
-            </tbody>
-          </table>
+        <div className="log-tabs">
+          <button className={logTab === 'bot' ? 'on' : ''} onClick={() => setLogTab('bot')}>
+            봇 로그 {st.logs.length > 0 && <span className="tab-badge">{st.logs.length}</span>}
+          </button>
+          <button className={logTab === 'open' ? 'on' : ''} onClick={() => setLogTab('open')}>
+            대기 주문 {openOrders.length > 0 && <span className="tab-badge">{openOrders.length}</span>}
+          </button>
+          <button className={logTab === 'trades' ? 'on' : ''} onClick={() => setLogTab('trades')}>
+            거래내역 {trades.length > 0 && <span className="tab-badge">{trades.length}</span>}
+          </button>
         </div>
-      </section>
 
-      <section className="card span2">
-        <h2>거래내역 (실제 체결)</h2>
-        {trades.length === 0 ? (
-          <p className="muted">체결된 거래 없음</p>
-        ) : (
+        {logTab === 'bot' && (
           <div className="table-scroll">
             <table>
-              <thead><tr><th>시각</th><th>종목</th><th>구분</th><th>유형</th><th>체결가</th><th>수량</th><th>체결금액</th><th>상태</th></tr></thead>
+              <thead><tr><th>시각</th><th>모드</th><th>종목</th><th>액션</th><th>가격</th><th>체결</th><th>사유</th></tr></thead>
               <tbody>
-                {trades.map((o) => {
-                  const ex = o.execution as Order['execution'] & { filledAmount?: string }
-                  return (
-                    <tr key={o.orderId}>
-                      <td className="muted">{fmtTime((o as Order & { orderedAt?: string }).orderedAt)}</td>
-                      <td>{(o as Order & { name?: string }).name ?? o.symbol} <span className="muted">{o.symbol}</span></td>
-                      <td className={o.side === 'BUY' ? 'up' : 'down'}>{o.side === 'BUY' ? '매수' : '매도'}</td>
-                      <td>{o.orderType === 'LIMIT' ? '지정가' : '시장가'}</td>
-                      <td>{ex.averageFilledPrice ? Number(ex.averageFilledPrice).toLocaleString() : '-'}</td>
-                      <td>{ex.filledQuantity}</td>
-                      <td>{ex.filledAmount ? Number(ex.filledAmount).toLocaleString() : '-'}</td>
-                      <td className="muted">{o.status === 'FILLED' ? '체결' : o.status === 'PARTIAL_FILLED' ? '일부체결' : o.status}</td>
+                {st.logs.length === 0 ? (
+                  <tr><td colSpan={7} className="muted">아직 실행 기록 없음 — "지금 1회 적립"으로 시작</td></tr>
+                ) : (
+                  [...st.logs].reverse().map((lg, i) => {
+                    const f = logFilled(lg)
+                    return (
+                    <tr key={i}>
+                      <td className="muted">{lg.ts.slice(0, 16).replace('T', ' ')}</td>
+                      <td><span style={{ color: lg.mode === 'LIVE' ? 'var(--up)' : 'var(--muted)' }}>{lg.mode}</span></td>
+                      <td>{lg.symbol ?? '-'}</td>
+                      <td>{actionKo(lg.action)}</td>
+                      <td>{fmt(lg.price)}</td>
+                      <td className={f == null ? 'muted' : f ? 'up' : 'down'}>{f == null ? '-' : f ? '체결' : '미체결'}</td>
+                      <td className="muted">{lg.reason}</td>
                     </tr>
-                  )
-                })}
+                    )
+                  })
+                )}
               </tbody>
             </table>
           </div>
+        )}
+
+        {logTab === 'open' && (
+          openOrders.length === 0 ? (
+            <p className="muted">대기 중인 주문 없음</p>
+          ) : (
+            <div className="table-scroll">
+              <table>
+                <thead><tr><th>종목</th><th>구분</th><th>유형</th><th>가격</th><th>수량</th><th>체결</th><th>상태</th><th></th></tr></thead>
+                <tbody>
+                  {openOrders.map((o) => {
+                    const nm = (o as Order & { name?: string }).name ?? o.symbol
+                    return (
+                    <tr key={o.orderId}>
+                      <td>{nm} <span className="muted">{o.symbol}</span></td>
+                      <td className={o.side === 'BUY' ? 'up' : 'down'}>{o.side === 'BUY' ? '매수' : '매도'}</td>
+                      <td>{o.orderType === 'LIMIT' ? '지정가' : '시장가'}</td>
+                      <td>{o.price ? Number(o.price).toLocaleString() : '-'}</td>
+                      <td>{o.quantity}</td>
+                      <td>{o.execution.filledQuantity}/{o.quantity}</td>
+                      <td className="muted">{o.status}</td>
+                      <td>
+                        <button className="ghost" onClick={() => cancelOrder(o.orderId, `${nm} ${o.orderType === 'LIMIT' ? '지정가' : '시장가'} ${o.quantity}주`)}
+                                disabled={busy} style={{ color: 'var(--down, #f04452)', padding: '4px 10px' }}>
+                          취소
+                        </button>
+                      </td>
+                    </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )
+        )}
+
+        {logTab === 'trades' && (
+          trades.length === 0 ? (
+            <p className="muted">체결된 거래 없음</p>
+          ) : (
+            <div className="table-scroll">
+              <table>
+                <thead><tr><th>시각</th><th>종목</th><th>구분</th><th>유형</th><th>체결가</th><th>수량</th><th>체결금액</th><th>상태</th></tr></thead>
+                <tbody>
+                  {trades.map((o) => {
+                    const ex = o.execution as Order['execution'] & { filledAmount?: string }
+                    return (
+                      <tr key={o.orderId}>
+                        <td className="muted">{fmtTime((o as Order & { orderedAt?: string }).orderedAt)}</td>
+                        <td>{(o as Order & { name?: string }).name ?? o.symbol} <span className="muted">{o.symbol}</span></td>
+                        <td className={o.side === 'BUY' ? 'up' : 'down'}>{o.side === 'BUY' ? '매수' : '매도'}</td>
+                        <td>{o.orderType === 'LIMIT' ? '지정가' : '시장가'}</td>
+                        <td>{ex.averageFilledPrice ? Number(ex.averageFilledPrice).toLocaleString() : '-'}</td>
+                        <td>{ex.filledQuantity}</td>
+                        <td>{ex.filledAmount ? Number(ex.filledAmount).toLocaleString() : '-'}</td>
+                        <td className="muted">{o.status === 'FILLED' ? '체결' : o.status === 'PARTIAL_FILLED' ? '일부체결' : o.status}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )
         )}
       </section>
 
@@ -537,10 +585,9 @@ function actionKo(a: string): string {
   return a
 }
 
-function StepHead({ n, title }: { n: number; title: string }) {
+function StepHead({ title }: { n?: number; title: string }) {
   return (
     <div className="span2 step-head">
-      <span className="step-no">{n}</span>
       <div className="step-title">{title}</div>
     </div>
   )
