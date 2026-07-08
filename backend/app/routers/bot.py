@@ -153,22 +153,44 @@ def preview(broker: str | None = None):
     except Exception as e:
         return {**base, "hasTarget": True, "action": "SKIP", "blockReason": f"미리보기 실패: {e}"}
 
+    name_by_symbol = {p["symbol"]: p.get("name", p["symbol"]) for p in items}
+
     if not plan:
         missing = _missing_price_symbols(cfg, prices)
+        cash_blocked = False
         if not prices:
             block = "시세를 하나도 가져오지 못했습니다 — 다음 확인 때 재시도"
         elif missing:
             block = f"시세 조회 실패: {', '.join(missing)} — 다음 확인 때 재시도"
         elif remaining_today <= 0:
             block = "오늘 하루 한도를 이미 다 썼습니다 — 내일 다시 시도"
+            cash_blocked = True
         elif budget <= 0:
             block = "매수가능금액/오늘 남은 한도로 1주도 못 삽니다 — 입금이 필요합니다."
+            cash_blocked = True
         elif has_underweight_target(cfg, current_values or {}, prices):
             block = "목표비중 미달 종목이 있지만 예산 부족으로 1주도 못 삽니다 — 입금이 필요합니다."
+            cash_blocked = True
         else:
             block = "오늘 살 게 없습니다 — 이미 목표 비중 도달."
-        return {**base, "hasTarget": True, "symbol": None, "name": None,
+
+        # 돈이 없어도 '다음에 뭘 살지'는 미리 볼 수 있어야 함 — 예산 무제한 가정으로
+        # 다음 후보만 계산해서 보여준다(실제로 사지는 못함, willTrade=False로 표시).
+        next_symbol = next_name = next_price = None
+        if cash_blocked:
+            try:
+                unlimited = plan_daily_buys(cfg, current_values or {}, prices, budget=10**15, max_iters=1)
+            except Exception:
+                unlimited = []
+            if unlimited:
+                nxt = unlimited[0]
+                next_symbol = nxt["symbol"]
+                next_name = name_by_symbol.get(next_symbol, next_symbol)
+                next_price = nxt["price"]
+
+        return {**base, "hasTarget": True, "symbol": next_symbol, "name": next_name,
                 "action": "SKIP", "willTrade": False, "cashBuyingPower": bp_cash,
+                "quantity": 0, "price": None, "lastPrice": next_price, "estCost": None,
                 "plan": [],
                 "blockReason": block,
                 "warnings": []}
@@ -176,7 +198,6 @@ def preview(broker: str | None = None):
     total_cost = sum(p["estCost"] for p in plan)
     guard = guardrails.check(client, cfg, state, total_cost, buying_power=bp_cash)
 
-    name_by_symbol = {p["symbol"]: p.get("name", p["symbol"]) for p in items}
     plan_out = [{
         "symbol": it["symbol"], "name": name_by_symbol.get(it["symbol"], it["symbol"]),
         "quantity": it["quantity"], "price": it["price"], "estCost": it["estCost"],
