@@ -113,7 +113,9 @@ def preview(broker: str | None = None):
     state = BotState.load(broker)
     client = get_client(broker)
 
-    from ..bot.runner import _buying_power, _holdings_values, _portfolio_prices, _current
+    from ..bot.runner import (
+        _buying_power, _holdings_values, _portfolio_prices, _current, _missing_price_symbols,
+    )
 
     # 현재 비중 = 실제 보유 평가금액 기준(못 읽으면 봇 누적투입 폴백)
     current_values = _holdings_values(client, cfg)
@@ -152,9 +154,13 @@ def preview(broker: str | None = None):
         return {**base, "hasTarget": True, "action": "SKIP", "blockReason": f"미리보기 실패: {e}"}
 
     if not plan:
-        block = ("오늘 하루 한도를 이미 다 썼습니다 — 내일 다시 시도" if remaining_today <= 0
-                 else "매수가능금액/오늘 남은 한도로 1주도 못 삽니다 — 입금이 필요합니다." if budget <= 0
-                 else "오늘 살 게 없습니다 — 이미 목표 비중 도달.")
+        missing = _missing_price_symbols(cfg, prices)
+        if missing and remaining_today > 0 and budget > 0:
+            block = f"시세 조회 실패: {', '.join(missing)} — 다음 확인 때 재시도"
+        else:
+            block = ("오늘 하루 한도를 이미 다 썼습니다 — 내일 다시 시도" if remaining_today <= 0
+                     else "매수가능금액/오늘 남은 한도로 1주도 못 삽니다 — 입금이 필요합니다." if budget <= 0
+                     else "오늘 살 게 없습니다 — 이미 목표 비중 도달.")
         return {**base, "hasTarget": True, "symbol": None, "name": None,
                 "action": "SKIP", "willTrade": False, "cashBuyingPower": bp_cash,
                 "plan": [],

@@ -27,7 +27,7 @@ class OrderLog:
     mode: str               # DRY_RUN | LIVE
     action: str             # LIMIT_BUY | MARKET_BUY | SKIP
     reason: str
-    symbol: str
+    symbol: str | None
     quantity: int = 0
     price: int | None = None
     order_id: str | None = None

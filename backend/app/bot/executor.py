@@ -17,10 +17,13 @@ def execute(client: TossClient, cfg: BotConfig, state: BotState, d: Decision, se
     today = date.today().isoformat()
     now = datetime.now(_KST).isoformat()
     mode = "DRY_RUN" if cfg.dry_run else "LIVE"
-    sym = d.symbol or cfg.symbol
 
     if d.action == "SKIP":
-        return OrderLog(now, today, mode, "SKIP", d.reason, sym)
+        # SKIP은 주문을 안 내므로 cfg.symbol(레거시 기본값)로 폴백하면 안 됨 —
+        # 안 그러면 실행 안 된 종목(예: 069500)이 실행기록에 찍혀 매수 시도처럼 보임.
+        return OrderLog(now, today, mode, "SKIP", d.reason, d.symbol or None)
+
+    sym = d.symbol or cfg.symbol
 
     # 멱등키: 날짜+시각(초)+심볼+순번 (장중 여러 번 실행돼 같은 날 같은 종목이 반복될 수 있어
     # 순번만으론 다른 실행끼리 겹칠 수 있음 → 실행 시각까지 포함해 유일성 보장)

@@ -78,10 +78,16 @@ def run_once(client: TossClient | None = None, broker: str | None = None,
 
     if not plan:
         cash_short = budget <= 0 or not prices
-        reason = ("매수가능금액/오늘 남은 한도로 1주도 못 삽니다" if cash_short
-                  else "오늘 살 게 없음 — 이미 목표 비중 도달")
-        if cash_short:
-            state.cash_exhausted_date = today
+        missing = _missing_price_symbols(cfg, prices)
+        if missing and not cash_short:
+            # 일부 종목만 시세 조회 실패 — '균형 도달'이 아니라 일시적 조회 실패이므로
+            # 억제(cash_exhausted_date)하지 않고 다음 확인 때 바로 재시도한다.
+            reason = f"시세 조회 실패: {', '.join(missing)} — 다음 확인 때 재시도"
+        else:
+            reason = ("매수가능금액/오늘 남은 한도로 1주도 못 삽니다" if cash_short
+                      else "오늘 살 게 없음 — 이미 목표 비중 도달")
+            if cash_short:
+                state.cash_exhausted_date = today
         log = executor.execute(client, cfg, state, _skip(reason))
         state.add_log(log); state.save()
         return _summary(cfg, state, [log])
@@ -180,6 +186,14 @@ def _holdings_values(client, cfg) -> dict | None:
             except (ValueError, TypeError):
                 pass
     return out
+
+
+def _missing_price_symbols(cfg: BotConfig, prices: dict) -> list[str]:
+    """목표비중이 있는데 이번 tick에 시세 조회가 실패해 후보에서 빠진 종목들.
+    (plan_daily_buys 는 prices 에 없는 종목을 조용히 건너뛰므로, 이걸 구분 못 하면
+    '이미 목표 비중 도달'로 오인 표시된다 — 실제로는 그냥 그 종목만 안 본 것)"""
+    return [p["symbol"] for p in cfg.portfolio
+            if p.get("symbol") and float(p.get("weight", 0)) > 0 and p["symbol"] not in prices]
 
 
 def _skip(reason: str) -> Decision:
