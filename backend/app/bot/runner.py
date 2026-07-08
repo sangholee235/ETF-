@@ -23,7 +23,7 @@ from tossapi import TossClient, TossApiError
 
 from . import executor, guardrails
 from .config import BotConfig
-from .portfolio import plan_daily_buys
+from .portfolio import plan_daily_buys, has_underweight_target
 from .state import BotState
 from .strategy import Decision
 
@@ -77,17 +77,23 @@ def run_once(client: TossClient | None = None, broker: str | None = None,
     plan = plan_daily_buys(cfg, current_values, prices, budget) if budget > 0 else []
 
     if not plan:
-        cash_short = budget <= 0 or not prices
         missing = _missing_price_symbols(cfg, prices)
-        if missing and not cash_short:
+        if not prices:
+            # 시세를 하나도 못 가져옴 — 균형/예산 문제가 아니라 일시적 조회 실패
+            reason = "시세를 하나도 가져오지 못했습니다 — 다음 확인 때 재시도"
+        elif missing:
             # 일부 종목만 시세 조회 실패 — '균형 도달'이 아니라 일시적 조회 실패이므로
             # 억제(cash_exhausted_date)하지 않고 다음 확인 때 바로 재시도한다.
             reason = f"시세 조회 실패: {', '.join(missing)} — 다음 확인 때 재시도"
+        elif budget <= 0:
+            reason = "매수가능금액/오늘 남은 한도로 1주도 못 삽니다"
+            state.cash_exhausted_date = today
+        elif has_underweight_target(cfg, current_values, prices):
+            # 목표비중 미달 종목이 있지만 지금 예산으론 그 종목 1주도 못 삼 — '균형'과는 다름
+            reason = "목표비중 미달 종목이 있지만 예산 부족으로 1주도 못 삽니다 — 입금이 필요합니다"
+            state.cash_exhausted_date = today
         else:
-            reason = ("매수가능금액/오늘 남은 한도로 1주도 못 삽니다" if cash_short
-                      else "오늘 살 게 없음 — 이미 목표 비중 도달")
-            if cash_short:
-                state.cash_exhausted_date = today
+            reason = "오늘 살 게 없음 — 이미 목표 비중 도달"
         log = executor.execute(client, cfg, state, _skip(reason))
         state.add_log(log); state.save()
         return _summary(cfg, state, [log])

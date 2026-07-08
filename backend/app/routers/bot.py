@@ -107,7 +107,7 @@ def preview(broker: str | None = None):
     - 시간과 무관한 구조적 경고(1주 비용 > 하루한도, 매수가능금액 < 예상비용)
     """
     from ..bot import guardrails
-    from ..bot.portfolio import plan_daily_buys, waterfall_status
+    from ..bot.portfolio import plan_daily_buys, waterfall_status, has_underweight_target
 
     cfg = BotConfig.load(broker)
     state = BotState.load(broker)
@@ -155,12 +155,18 @@ def preview(broker: str | None = None):
 
     if not plan:
         missing = _missing_price_symbols(cfg, prices)
-        if missing and remaining_today > 0 and budget > 0:
+        if not prices:
+            block = "시세를 하나도 가져오지 못했습니다 — 다음 확인 때 재시도"
+        elif missing:
             block = f"시세 조회 실패: {', '.join(missing)} — 다음 확인 때 재시도"
+        elif remaining_today <= 0:
+            block = "오늘 하루 한도를 이미 다 썼습니다 — 내일 다시 시도"
+        elif budget <= 0:
+            block = "매수가능금액/오늘 남은 한도로 1주도 못 삽니다 — 입금이 필요합니다."
+        elif has_underweight_target(cfg, current_values or {}, prices):
+            block = "목표비중 미달 종목이 있지만 예산 부족으로 1주도 못 삽니다 — 입금이 필요합니다."
         else:
-            block = ("오늘 하루 한도를 이미 다 썼습니다 — 내일 다시 시도" if remaining_today <= 0
-                     else "매수가능금액/오늘 남은 한도로 1주도 못 삽니다 — 입금이 필요합니다." if budget <= 0
-                     else "오늘 살 게 없습니다 — 이미 목표 비중 도달.")
+            block = "오늘 살 게 없습니다 — 이미 목표 비중 도달."
         return {**base, "hasTarget": True, "symbol": None, "name": None,
                 "action": "SKIP", "willTrade": False, "cashBuyingPower": bp_cash,
                 "plan": [],

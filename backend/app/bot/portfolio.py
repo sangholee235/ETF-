@@ -197,3 +197,10 @@ def plan_daily_buys(cfg: BotConfig, current_values: dict, prices: dict,
         remaining -= cost
 
     return plan
+
+
+def has_underweight_target(cfg: BotConfig, current_values: dict, prices: dict) -> bool:
+    """예산이 무한하다고 가정하면 뭔가 살 게 있는지 — 진짜 '균형(목표비중 도달)' 상태와
+    '예산이 부족해서 1주도 못 사는' 상태를 구분하는 데 쓴다(둘 다 plan_daily_buys 가
+    빈 리스트를 반환하므로 이걸로 나눠 봐야 함)."""
+    return bool(plan_daily_buys(cfg, current_values, prices, budget=10**15, max_iters=1))
