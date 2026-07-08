@@ -107,6 +107,8 @@ function BrokerView({ broker }: { broker: string }) {
   const [openOrders, setOpenOrders] = useState<Order[]>([])
   const [trades, setTrades] = useState<Order[]>([])
   const [logTab, setLogTab] = useState<'bot' | 'open' | 'trades'>('bot')
+  const [logPage, setLogPage] = useState(0)
+  const LOG_PAGE_SIZE = 20
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
   const [hideAssets, setHideAssets] = useState(() => {
@@ -368,44 +370,59 @@ function BrokerView({ broker }: { broker: string }) {
       <StepHead title="실행 기록" />
       <section className="card span2">
         <div className="log-tabs">
-          <button className={logTab === 'bot' ? 'on' : ''} onClick={() => setLogTab('bot')}>
+          <button className={logTab === 'bot' ? 'on' : ''} onClick={() => { setLogTab('bot'); setLogPage(0) }}>
             봇 로그 {st.logs.length > 0 && <span className="tab-badge">{st.logs.length}</span>}
           </button>
-          <button className={logTab === 'open' ? 'on' : ''} onClick={() => setLogTab('open')}>
+          <button className={logTab === 'open' ? 'on' : ''} onClick={() => { setLogTab('open'); setLogPage(0) }}>
             대기 주문 {openOrders.length > 0 && <span className="tab-badge">{openOrders.length}</span>}
           </button>
-          <button className={logTab === 'trades' ? 'on' : ''} onClick={() => setLogTab('trades')}>
+          <button className={logTab === 'trades' ? 'on' : ''} onClick={() => { setLogTab('trades'); setLogPage(0) }}>
             거래내역 {trades.length > 0 && <span className="tab-badge">{trades.length}</span>}
           </button>
         </div>
 
-        {logTab === 'bot' && (
-          <div className="table-scroll">
-            <table>
-              <thead><tr><th>시각</th><th>모드</th><th>종목</th><th>액션</th><th>가격</th><th>체결</th><th>사유</th></tr></thead>
-              <tbody>
-                {st.logs.length === 0 ? (
-                  <tr><td colSpan={7} className="muted">아직 실행 기록 없음 — "지금 1회 적립"으로 시작</td></tr>
-                ) : (
-                  [...st.logs].reverse().map((lg, i) => {
-                    const f = logFilled(lg)
-                    return (
-                    <tr key={i}>
-                      <td className="muted">{lg.ts.slice(0, 16).replace('T', ' ')}</td>
-                      <td><span style={{ color: lg.mode === 'LIVE' ? 'var(--up)' : 'var(--muted)' }}>{lg.mode}</span></td>
-                      <td>{lg.symbol ?? '-'}</td>
-                      <td>{actionKo(lg.action)}</td>
-                      <td>{fmt(lg.price)}</td>
-                      <td className={f == null ? 'muted' : f ? 'up' : 'down'}>{f == null ? '-' : f ? '체결' : '미체결'}</td>
-                      <td className="muted">{lg.reason}</td>
-                    </tr>
-                    )
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
+        {logTab === 'bot' && (() => {
+          const reversed = [...st.logs].reverse()
+          const pageCount = Math.max(1, Math.ceil(reversed.length / LOG_PAGE_SIZE))
+          const page = Math.min(logPage, pageCount - 1)
+          const pageLogs = reversed.slice(page * LOG_PAGE_SIZE, (page + 1) * LOG_PAGE_SIZE)
+          return (
+            <>
+              <div className="table-scroll">
+                <table>
+                  <thead><tr><th>시각</th><th>모드</th><th>종목</th><th>액션</th><th>가격</th><th>체결</th><th>사유</th></tr></thead>
+                  <tbody>
+                    {reversed.length === 0 ? (
+                      <tr><td colSpan={7} className="muted">아직 실행 기록 없음 — "지금 1회 적립"으로 시작</td></tr>
+                    ) : (
+                      pageLogs.map((lg, i) => {
+                        const f = logFilled(lg)
+                        return (
+                        <tr key={i}>
+                          <td className="muted">{lg.ts.slice(0, 16).replace('T', ' ')}</td>
+                          <td><span style={{ color: lg.mode === 'LIVE' ? 'var(--up)' : 'var(--muted)' }}>{lg.mode}</span></td>
+                          <td>{lg.symbol ?? '-'}</td>
+                          <td>{actionKo(lg.action)}</td>
+                          <td>{fmt(lg.price)}</td>
+                          <td className={f == null ? 'muted' : f ? 'up' : 'down'}>{f == null ? '-' : f ? '체결' : '미체결'}</td>
+                          <td className="muted">{lg.reason}</td>
+                        </tr>
+                        )
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              {pageCount > 1 && (
+                <div className="log-pager">
+                  <button className="ghost" disabled={page === 0} onClick={() => setLogPage(page - 1)}>이전</button>
+                  <span className="muted">{page + 1} / {pageCount}</span>
+                  <button className="ghost" disabled={page >= pageCount - 1} onClick={() => setLogPage(page + 1)}>다음</button>
+                </div>
+              )}
+            </>
+          )
+        })()}
 
         {logTab === 'open' && (
           openOrders.length === 0 ? (

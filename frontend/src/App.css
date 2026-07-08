@@ -449,3 +449,12 @@ select { background: #15151a; border: 1px solid var(--line); color: var(--txt); 
   /* 전략 컨트롤 버튼: 초소형에선 2개씩 */
   .strat-btns > button { flex: 1 1 44%; }
 }
+
+.log-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 10px;
+}
+.log-pager button:disabled { opacity: 0.4; cursor: default; }
