@@ -200,7 +200,31 @@ def plan_daily_buys(cfg: BotConfig, current_values: dict, prices: dict,
 
 
 def has_underweight_target(cfg: BotConfig, current_values: dict, prices: dict) -> bool:
-    """예산이 무한하다고 가정하면 뭔가 살 게 있는지 — 진짜 '균형(목표비중 도달)' 상태와
-    '예산이 부족해서 1주도 못 사는' 상태를 구분하는 데 쓴다(둘 다 plan_daily_buys 가
-    빈 리스트를 반환하므로 이걸로 나눠 봐야 함)."""
-    return bool(plan_daily_buys(cfg, current_values, prices, budget=10**15, max_iters=1))
+    """진짜로 목표비중보다 부족한(양수 ideal_needed) 종목이 하나라도 있는지 —
+    '예산이 부족해서 1주도 못 사는' 상태와 진짜 '균형(목표비중 도달)' 상태를 구분하는 데 쓴다.
+
+    주의: plan_daily_buys(budget=매우 큰 값)로 흉내내면 안 된다 — 그 함수엔 '완전
+    균형이어도 현금 안 놀리려고 1주씩 계속 산다'는 폴백이 있어서, 예산을 무한으로
+    주면 균형 여부와 무관하게 항상 뭔가를 사버려(True만 나옴, 실측로 확인됨).
+    그래서 여기선 그 폴백 없이 ideal_needed 부호만 순수하게 확인한다."""
+    items = [p for p in cfg.portfolio
+            if p.get("symbol") and float(p.get("weight", 0)) > 0 and p["symbol"] in prices]
+    if not items:
+        return False
+
+    total_weight = sum(float(p["weight"]) for p in items)
+    total_v = sum(float(current_values.get(p["symbol"], 0)) for p in items)
+
+    # 콜드스타트(투자 0원): ideal_needed 공식은 자연히 0을 내어(진짜 부족과 구분 안 됨)
+    # plan_daily_buys 에선 '균형 분기'로 자연스럽게 시작하지만, 여기선 그걸 "이미 목표
+    # 비중 도달"로 오인하면 안 되므로 명시적으로 '부족함'으로 취급한다.
+    if total_v <= 0:
+        return True
+
+    for p in items:
+        w = float(p["weight"]) / total_weight
+        value = float(current_values.get(p["symbol"], 0))
+        need = float("inf") if w >= 1 else (w * total_v - value) / (1 - w)
+        if need > 0:
+            return True
+    return False
