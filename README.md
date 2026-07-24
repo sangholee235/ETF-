@@ -97,6 +97,27 @@ cd backend && python -m pytest tests/ -q
 - **무인 배포**: `git push` → GitHub Actions(테스트→이미지 빌드→ghcr.io) → 서버 Watchtower 자동 교체. 서버로 들어오는 통로 0개(pull 방식).
 - **보안**: 포트 `127.0.0.1` 바인딩 + Tailscale, 로그인 없는 대시보드라 인터넷 전체공개 금지.
 
+### 왜 pull 방식인가 (push 방식과 비교)
+
+일반적인 CD는 **push 방식**이다 — GitHub Actions가 SSH로 서버에 직접 접속해 `docker pull && restart`를 실행한다.
+이게 성립하려면 서버의 SSH 개인키를 GitHub Secrets에 저장해야 하고, 서버는 22번 포트를 열어둬야 한다.
+그 키가 유출되면(Secrets 유출, 워크플로 조작, 서드파티 액션 공급망 공격 등) 공격자가 곧바로 서버에 로그인할 수 있다.
+
+이 프로젝트는 반대로 **pull 방식**을 쓴다. 방향이 뒤집힌다:
+
+```
+push 방식: GitHub Actions ──SSH로 접속──▶ 서버                (서버가 "당하는" 쪽)
+pull 방식: GitHub Actions ──이미지 push──▶ ghcr.io ◀──5분마다 확인── 서버 Watchtower
+                                                        (서버가 "확인하러 나가는" 쪽)
+```
+
+- GitHub Actions는 **ghcr.io**(GitHub Container Registry — GitHub이 운영하는 Docker 이미지 저장소, Docker Hub의 GitHub판)에 이미지를 올리기만 하고 서버 근처에는 가지도 않는다.
+- 서버의 **Watchtower**가 5분마다 스스로 ghcr.io를 확인해서, 새 이미지가 올라와 있으면 스스로 pull해서 컨테이너를 교체한다.
+- 그래서 **서버에 SSH 키를 저장할 필요도, 22번 포트를 CI용으로 열어둘 필요도 없다** — 애초에 "바깥에서 서버로 들어오는 문"이 존재하지 않는다. GitHub Secrets나 Actions가 통째로 털려도, 공격자가 얻는 건 "public 이미지에 뭔가 push할 권한" 정도지 서버 로그인 키는 아니다.
+- 이미지가 public이라 서버가 pull할 때 인증 자체가 필요 없다(push할 때만 리포지토리 `GITHUB_TOKEN`으로 인증).
+
+**트레이드오프**: 이미지가 public이라 "누군가 `tossapi-backend:latest`에 악성 이미지를 push하면 Watchtower가 그대로 받아 실행"하는 리스크는 남는다. 이건 서버 SSH키 대신 **GitHub 리포지토리·Actions 자체의 무결성**(특히 계정 2FA)이 막아주는 구조로, "서버를 지키는 문제"를 "GitHub 계정을 지키는 문제"로 옮긴 것에 가깝다.
+
 ---
 
 ## 기술 스택
