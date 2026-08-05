@@ -29,3 +29,13 @@ def to_http(exc: TossApiError) -> HTTPException:
         status_code=status,
         detail={"code": exc.code, "message": exc.message, "requestId": exc.request_id},
     )
+
+
+def to_http_any(exc: Exception) -> HTTPException:
+    """TossApiError/RuntimeError(키움 등 다른 브로커의 실패) 공통 변환.
+    키움은 토큰·TR 실패를 TossApiError 가 아니라 RuntimeError 로 던지는데,
+    라우터가 TossApiError 만 잡으면 처리 안 된 500이 그대로 새고 프론트의
+    .catch(() => {})가 조용히 삼켜서 '에러도 없이 그냥 - 만 뜨는' 증상이 생긴다."""
+    if isinstance(exc, TossApiError):
+        return to_http(exc)
+    return HTTPException(status_code=502, detail=str(exc))

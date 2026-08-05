@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from tossapi import TossClient, TossApiError
 
-from ..deps import client_dep, to_http
+from ..deps import client_dep, to_http_any
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
 
@@ -19,16 +19,16 @@ def list_orders(status: str = "OPEN", symbol: str | None = None,
                 client: TossClient = Depends(client_dep)):
     try:
         return client.get_orders(status=status, symbol=symbol)
-    except TossApiError as e:
-        raise to_http(e)
+    except (TossApiError, RuntimeError) as e:
+        raise to_http_any(e)
 
 
 @router.get("/{order_id}")
 def get_order(order_id: str, client: TossClient = Depends(client_dep)):
     try:
         return client.get_order(order_id)
-    except TossApiError as e:
-        raise to_http(e)
+    except (TossApiError, RuntimeError) as e:
+        raise to_http_any(e)
 
 
 @router.post("/{order_id}/cancel")
@@ -37,9 +37,9 @@ def cancel_order(order_id: str, client: TossClient = Depends(client_dep)):
     try:
         return client.cancel_order(order_id)
     except TossApiError as e:
-        raise to_http(e)
+        raise to_http_any(e)
     except (NotImplementedError, RuntimeError) as e:
-        from fastapi import HTTPException
+        # 미구현/브로커 거부(주문 상태 변경 등)는 502 대신 400으로 친절하게
         raise HTTPException(status_code=400, detail=str(e) or "취소를 지원하지 않습니다.")
 
 

@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query
 
 from tossapi import TossClient, TossApiError
 
-from ..deps import client_dep, to_http
+from ..deps import client_dep, to_http_any
 
 router = APIRouter(prefix="/api/market", tags=["market"])
 
@@ -16,24 +16,24 @@ def prices(symbols: str = Query(..., description="콤마 구분 심볼"),
            client: TossClient = Depends(client_dep)):
     try:
         return client.get_prices(symbols)
-    except TossApiError as e:
-        raise to_http(e)
+    except (TossApiError, RuntimeError) as e:
+        raise to_http_any(e)
 
 
 @router.get("/orderbook")
 def orderbook(symbol: str, client: TossClient = Depends(client_dep)):
     try:
         return client.get_orderbook(symbol)
-    except TossApiError as e:
-        raise to_http(e)
+    except (TossApiError, RuntimeError) as e:
+        raise to_http_any(e)
 
 
 @router.get("/trades")
 def trades(symbol: str, count: int = 50, client: TossClient = Depends(client_dep)):
     try:
         return client.get_trades(symbol, count)
-    except TossApiError as e:
-        raise to_http(e)
+    except (TossApiError, RuntimeError) as e:
+        raise to_http_any(e)
 
 
 @router.get("/candles")
@@ -42,24 +42,24 @@ def candles(symbol: str, interval: str = "1d", count: int = 100,
             client: TossClient = Depends(client_dep)):
     try:
         return client.get_candles(symbol, interval, count, before, adjusted)
-    except TossApiError as e:
-        raise to_http(e)
+    except (TossApiError, RuntimeError) as e:
+        raise to_http_any(e)
 
 
 @router.get("/stocks")
 def stocks(symbols: str, client: TossClient = Depends(client_dep)):
     try:
         return client.get_stocks(symbols)
-    except TossApiError as e:
-        raise to_http(e)
+    except (TossApiError, RuntimeError) as e:
+        raise to_http_any(e)
 
 
 @router.get("/price-limits")
 def price_limits(symbol: str, client: TossClient = Depends(client_dep)):
     try:
         return client.get_price_limits(symbol)
-    except TossApiError as e:
-        raise to_http(e)
+    except (TossApiError, RuntimeError) as e:
+        raise to_http_any(e)
 
 
 @router.get("/ranking")
@@ -68,8 +68,8 @@ def ranking(client: TossClient = Depends(client_dep)):
     from ..market_ranking import get_ranking
     try:
         return get_ranking(client)
-    except TossApiError as e:
-        raise to_http(e)
+    except (TossApiError, RuntimeError) as e:
+        raise to_http_any(e)
 
 
 @router.get("/market-summary")
@@ -78,8 +78,8 @@ def market_summary(client: TossClient = Depends(client_dep)):
     from ..market_ranking import get_market_summary
     try:
         return get_market_summary(client)
-    except TossApiError as e:
-        raise to_http(e)
+    except (TossApiError, RuntimeError) as e:
+        raise to_http_any(e)
 
 
 @router.get("/exchange-rate")
@@ -87,5 +87,5 @@ def exchange_rate(base: str = "USD", quote: str = "KRW",
                   client: TossClient = Depends(client_dep)):
     try:
         return client.get_exchange_rate(base, quote)
-    except TossApiError as e:
-        raise to_http(e)
+    except (TossApiError, RuntimeError) as e:
+        raise to_http_any(e)

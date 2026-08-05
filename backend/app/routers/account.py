@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends
 
 from tossapi import TossClient, TossApiError
 
-from ..deps import client_dep, to_http
+from ..deps import client_dep, to_http_any
 
 router = APIRouter(prefix="/api/account", tags=["account"])
 
@@ -15,37 +15,37 @@ router = APIRouter(prefix="/api/account", tags=["account"])
 def accounts(client: TossClient = Depends(client_dep)):
     try:
         return client.get_accounts()
-    except TossApiError as e:
-        raise to_http(e)
+    except (TossApiError, RuntimeError) as e:
+        raise to_http_any(e)
 
 
 @router.get("/holdings")
 def holdings(symbol: str | None = None, client: TossClient = Depends(client_dep)):
     try:
         return client.get_holdings(symbol)
-    except TossApiError as e:
-        raise to_http(e)
+    except (TossApiError, RuntimeError) as e:
+        raise to_http_any(e)
 
 
 @router.get("/buying-power")
 def buying_power(currency: str = "KRW", client: TossClient = Depends(client_dep)):
     try:
         return client.get_buying_power(currency)
-    except TossApiError as e:
-        raise to_http(e)
+    except (TossApiError, RuntimeError) as e:
+        raise to_http_any(e)
 
 
 @router.get("/sellable-quantity")
 def sellable_quantity(symbol: str, client: TossClient = Depends(client_dep)):
     try:
         return client.get_sellable_quantity(symbol)
-    except TossApiError as e:
-        raise to_http(e)
+    except (TossApiError, RuntimeError) as e:
+        raise to_http_any(e)
 
 
 @router.get("/commissions")
 def commissions(client: TossClient = Depends(client_dep)):
     try:
         return client.get_commissions()
-    except TossApiError as e:
-        raise to_http(e)
+    except (TossApiError, RuntimeError) as e:
+        raise to_http_any(e)
