@@ -209,6 +209,14 @@ export interface EtfCatalogItem {
   lastPrice: string | null
 }
 
+/** 전체 상장 ETF 검색 결과 (ka10099 기반, 키움 전용). 큐레이션 카탈로그와 달리 category/tax 없음. */
+export interface EtfSearchItem {
+  symbol: string
+  name: string
+  market: string
+  lastPrice: string | null
+}
+
 export interface RankItem {
   symbol: string
   name: string

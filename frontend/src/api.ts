@@ -8,6 +8,7 @@ import type {
   BuyingPower,
   CandlePage,
   EtfCatalogItem,
+  EtfSearchItem,
   SweepResult,
   Holdings,
   Orderbook,
@@ -91,6 +92,8 @@ export const api = {
   botStatus: (broker?: string) => get<BotStatus>(`/api/bot/status${bq(broker, '?')}`),
   botPreview: (broker?: string) => get<BotPreview>(`/api/bot/preview${bq(broker, '?')}`),
   botCatalog: (broker?: string) => get<EtfCatalogItem[]>(`/api/bot/catalog${bq(broker, '?')}`),
+  botCatalogSearch: (q: string, broker?: string) =>
+    get<EtfSearchItem[]>(`/api/bot/catalog/search?q=${encodeURIComponent(q)}${bq(broker)}`),
   botRun: (broker?: string) => req<Record<string, unknown>>('POST', `/api/bot/run${bq(broker, '?')}`),
   botPatchConfig: (patch: Partial<BotConfig>, broker?: string) =>
     req<BotConfig>('PATCH', `/api/bot/config${bq(broker, '?')}`, patch),

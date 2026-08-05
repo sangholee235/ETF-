@@ -1,14 +1,16 @@
-import { useState } from 'react'
-import type { BotConfig, EtfCatalogItem, PortfolioItem, PortfolioProgress, WaterfallStatus } from './types'
+import { useEffect, useState } from 'react'
+import { api } from './api'
+import type { BotConfig, EtfCatalogItem, EtfSearchItem, PortfolioItem, PortfolioProgress, WaterfallStatus } from './types'
 
 const COLORS = ['#3182f6', '#f5a623', '#22c55e', '#f04452', '#a855f7', '#06b6d4', '#eab308', '#ec4899']
 const fmt = (v: number) => Math.round(v).toLocaleString()
 
 export default function PortfolioPanel({
-  cfg, catalog, onPatch, busy, progress, waterfall, nextSymbol,
+  cfg, catalog, broker, onPatch, busy, progress, waterfall, nextSymbol,
 }: {
   cfg: BotConfig
   catalog: EtfCatalogItem[]
+  broker: string
   onPatch: (p: Partial<BotConfig>) => void
   busy: boolean
   progress?: PortfolioProgress[]
@@ -18,6 +20,29 @@ export default function PortfolioPanel({
   const [items, setItems] = useState<PortfolioItem[]>(cfg.portfolio ?? [])
   const [addSym, setAddSym] = useState('')
   const [dragIdx, setDragIdx] = useState<number | null>(null)
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<EtfSearchItem[]>([])
+  const [searching, setSearching] = useState(false)
+
+  // 이름/코드 검색 (키움 전용, ka10099) — 300ms 디바운스
+  useEffect(() => {
+    const q = query.trim()
+    if (q.length < 2) { setResults([]); setSearching(false); return }
+    setSearching(true)
+    const t = setTimeout(() => {
+      api.botCatalogSearch(q, broker)
+        .then(setResults)
+        .catch(() => setResults([]))
+        .finally(() => setSearching(false))
+    }, 300)
+    return () => clearTimeout(t)
+  }, [query, broker])
+
+  const addFromSearch = (e: EtfSearchItem) => {
+    if (items.some((i) => i.symbol === e.symbol)) return
+    setItems([...items, { symbol: e.symbol, name: e.name, weight: 10, target: 100000 }])
+    setQuery(''); setResults([])
+  }
   const mode = cfg.fill_mode ?? 'weight'
   const dirty = JSON.stringify(items) !== JSON.stringify(cfg.portfolio ?? [])
   const priceOf = (sym: string) => {
@@ -58,7 +83,7 @@ export default function PortfolioPanel({
 
       <div className="pf-add">
         <select value={addSym} onChange={(e) => setAddSym(e.target.value)}>
-          <option value="">+ ETF 추가</option>
+          <option value="">+ 자주 쓰는 ETF에서 선택</option>
           {catalog.filter((e) => !items.some((i) => i.symbol === e.symbol)).map((e) => (
             <option key={e.symbol} value={e.symbol}>
               {e.name} ({e.symbol}){e.lastPrice ? ` · 1주 ${Number(e.lastPrice).toLocaleString()}원` : ''}
@@ -67,6 +92,28 @@ export default function PortfolioPanel({
         </select>
         <button onClick={add} disabled={!addSym}>추가</button>
         <button onClick={() => onPatch({ portfolio: items })} disabled={busy || !dirty} style={{ marginLeft: 'auto' }}>저장</button>
+      </div>
+
+      <div className="pf-search" style={{ position: 'relative', marginTop: 8 }}>
+        <input type="text" value={query} onChange={(e) => setQuery(e.target.value)}
+               placeholder="🔍 이름/코드로 전체 ETF 검색 (예: AI빅테크, 490090)"
+               style={{ width: '100%' }} />
+        {query.trim().length >= 2 && (
+          <div className="pf-search-results">
+            {searching ? (
+              <div className="muted" style={{ padding: 10 }}>검색 중...</div>
+            ) : results.length === 0 ? (
+              <div className="muted" style={{ padding: 10 }}>검색 결과 없음 (키움만 지원)</div>
+            ) : (
+              results.map((e) => (
+                <div key={e.symbol} className="pf-search-row" onClick={() => addFromSearch(e)}>
+                  <span>{e.name} <span className="muted">{e.symbol}</span></span>
+                  {e.lastPrice && <span className="muted">{Number(e.lastPrice).toLocaleString()}원</span>}
+                </div>
+              ))
+            )}
+          </div>
+        )}
       </div>
 
       <p className="muted" style={{ marginTop: 10 }}>

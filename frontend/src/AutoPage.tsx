@@ -267,7 +267,7 @@ function BrokerView({ broker }: { broker: string }) {
 
       {/* ───────── 2. 내 전략 (목표 비중) ───────── */}
       <StepHead n={2} title="내 전략 — 목표 비중" />
-      <PortfolioPanel cfg={cfg} catalog={catalog} onPatch={patch} busy={busy}
+      <PortfolioPanel cfg={cfg} catalog={catalog} broker={broker} onPatch={patch} busy={busy}
                       progress={preview?.progress} waterfall={preview?.waterfall} nextSymbol={preview?.symbol} />
 
       {/* ───────── 3. 전략 상태 ───────── */}

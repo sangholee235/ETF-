@@ -46,6 +46,7 @@ class KiwoomBroker(Broker):
         self._lock = threading.Lock()
         self._token: str | None = None
         self._token_exp: datetime | None = None
+        self._etf_list_cache: tuple[float, list[dict]] | None = None
 
     # ---------------- 인증 (au10001) ----------------
     def _get_token(self, force: bool = False) -> str:
@@ -252,6 +253,26 @@ class KiwoomBroker(Broker):
             if info:
                 out.append(info)
         return out
+    _ETF_LIST_TTL = 3600.0  # 초 — 상장ETF 목록은 하루에도 거의 안 바뀌니 넉넉히 캐시
+
+    def list_etfs(self) -> list[dict]:
+        """ka10099 종목정보 리스트(mrkt_tp=8: ETF) → 카탈로그 검색용 목록.
+        연속조회(cont-yn/next-key)로 전부 모아 1시간 캐시(Broker 인스턴스 생존 동안)."""
+        import time
+        now = time.time()
+        if self._etf_list_cache and now - self._etf_list_cache[0] < self._ETF_LIST_TTL:
+            return self._etf_list_cache[1]
+
+        raw = self._request_all("ka10099", "/api/dostk/stkinfo", {"mrkt_tp": "8"}, "list")
+        out = [{
+            "symbol": it.get("code", "").strip(),
+            "name": it.get("name", "").strip(),
+            "market": it.get("marketName", ""),
+            "lastPrice": _i(it.get("lastPrice")),
+        } for it in raw if it.get("code")]
+        self._etf_list_cache = (now, out)
+        return out
+
     def get_exchange_rate(self, base_currency: str = "USD", quote_currency: str = "KRW",
                           date_time: str | None = None) -> dict: raise NotImplementedError(_TODO)
     def get_kr_market_calendar(self, date: str | None = None) -> dict: raise NotImplementedError(_TODO)

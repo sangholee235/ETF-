@@ -256,6 +256,26 @@ def catalog(broker: str | None = None):
     return [{**e, "lastPrice": price_map.get(e["symbol"])} for e in MAJOR_ETFS]
 
 
+@router.get("/catalog/search")
+def catalog_search(q: str, broker: str | None = None):
+    """전체 상장 ETF 대상 이름 검색(ka10099). 지금은 키움만 지원 — 토스는 해당 TR 없음.
+    2글자 미만이면 결과가 너무 많아지므로 빈 목록 반환."""
+    q = q.strip()
+    if len(q) < 2:
+        return []
+    client = get_client(broker)
+    list_etfs = getattr(client, "list_etfs", None)
+    if list_etfs is None:
+        return []  # 토스 등 미지원 브로커
+    try:
+        etfs = list_etfs()
+    except Exception:
+        return []
+    ql = q.lower()
+    matched = [e for e in etfs if ql in e["name"].lower() or ql in e["symbol"]]
+    return matched[:30]
+
+
 class ConfigPatch(BaseModel):
     symbol: str | None = None
     symbol_name: str | None = None

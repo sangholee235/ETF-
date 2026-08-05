@@ -236,6 +236,17 @@ body.hide-assets .money {
 .pf-row i { width: 10px; height: 10px; border-radius: 3px; flex: 0 0 auto; }
 .pf-row .nm { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pf-add { display: flex; gap: 8px; margin-top: 12px; }
+.pf-search-results {
+  position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 5;
+  max-height: 260px; overflow-y: auto;
+  background: var(--card, #15151a); border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.35);
+}
+.pf-search-row {
+  display: flex; justify-content: space-between; gap: 10px;
+  padding: 9px 12px; cursor: pointer; font-size: 14px;
+}
+.pf-search-row:hover { background: rgba(255,255,255,.06); }
 button.ghost { background: transparent; color: var(--muted); padding: 4px 8px; }
 button.ghost:hover { color: var(--up); filter: none; }
 select { background: #15151a; border: 1px solid var(--line); color: var(--txt); padding: 9px 12px; border-radius: 10px; font-size: 14px; }
