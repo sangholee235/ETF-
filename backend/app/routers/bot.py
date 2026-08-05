@@ -169,7 +169,10 @@ def preview(broker: str | None = None):
             block = "매수가능금액/오늘 남은 한도로 1주도 못 삽니다 — 입금이 필요합니다."
             cash_blocked = True
         elif has_underweight_target(cfg, current_values or {}, prices):
-            block = "목표비중 미달 종목이 있지만 예산 부족으로 1주도 못 삽니다 — 입금이 필요합니다."
+            # 실제 가격×수량은 예산 안에 들어와도, 시장가 증거금 버퍼(가격×1.3, 추정치)
+            # 때문에 여기 걸릴 수 있음 — "진짜 돈이 모자란다"는 뜻이 아닐 수 있어 문구를 구체적으로.
+            block = ("목표비중 미달 종목이 있지만 시장가 증거금 버퍼(가격의 1.3배, 상한가 기준 추정치) "
+                     "때문에 지금 예산으론 1주도 못 삽니다 — 실제 가격보단 여유있게 예산을 잡아야 합니다.")
             cash_blocked = True
         else:
             block = "오늘 살 게 없습니다 — 이미 목표 비중 도달."
