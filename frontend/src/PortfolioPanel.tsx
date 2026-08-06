@@ -10,7 +10,7 @@ export default function PortfolioPanel({
 }: {
   cfg: BotConfig
   catalog: EtfCatalogItem[]
-  broker: string
+  broker?: string
   onPatch: (p: Partial<BotConfig>) => void
   busy: boolean
   progress?: PortfolioProgress[]
