@@ -99,7 +99,7 @@ export default function App() {
               <circle cx="50" cy="20" r="5" fill="#fff" />
             </svg>
           </span>
-          <span className="brand-name">자동<b>적립</b></span>
+          <span className="brand-name"><b>ETF</b></span>
         </div>
         {/* 탭이 '적립' 하나뿐이라 메뉴 버튼 자체가 무의미 — 숨김(되살리려면 위 top-tabs 복원)
         <nav className="top-tabs">
