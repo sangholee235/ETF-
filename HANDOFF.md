@@ -59,7 +59,7 @@ cd backend && python -m pytest tests/ -q
 docker compose up -d                # http://localhost:8080
 ```
 
-## 4. 화면 (현재 = 적립 단일 탭, 브랜드 "autovest")
+## 4. 화면 (현재 = 적립 단일 탭, 브랜드 "ETF")
 조회/랭킹/로그 탭은 코드는 남기되 숨김(App.tsx 주석). 적립 탭 흐름(AutoPage.tsx):
 - **① 지금 내 자산**: 보유 도넛(HoldingsDonut) + **보유 종목 수익률 표**(종목·수량·평균가·현재가·평가금액·손익·수익률, 실계좌)
 - **② 목표 비중**: PortfolioPanel — 비중추종. 목표까지 N%p 부족/초과 뱃지 + ⬅ 다음 적립, 살수있는거라도산다│기다린다 토글

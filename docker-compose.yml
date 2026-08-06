@@ -1,4 +1,4 @@
-# autovest — 원클릭 실행
+# ETF 자동 적립 봇 — 원클릭 실행
 #   cp .env.example .env   # 토스/키움 키 입력
 #   로컬(빌드):   docker compose up -d --build
 #   서버(배포):   docker compose pull && docker compose up -d   # ghcr.io 이미지 당겨서 실행

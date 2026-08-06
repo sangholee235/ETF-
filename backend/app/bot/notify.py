@@ -18,7 +18,7 @@ def discord(message: str) -> None:
             url, data=data,
             headers={
                 "Content-Type": "application/json",
-                "User-Agent": "autovest/1.0",   # 없으면 디스코드가 403 으로 막음
+                "User-Agent": "etf-bot/1.0",   # 없으면 디스코드가 403 으로 막음
             },
         )
         urllib.request.urlopen(req, timeout=5)

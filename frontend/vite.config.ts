@@ -10,8 +10,8 @@ export default defineConfig({
       registerType: 'autoUpdate',          // 새 배포 시 자동 업데이트 (CI/CD 와 궁합)
       includeAssets: ['favicon.svg', 'icons.svg'],
       manifest: {
-        name: 'autovest · 자동 적립',
-        short_name: 'autovest',
+        name: 'ETF · 자동 적립',
+        short_name: 'ETF',
         description: '지수 ETF 자동 적립 대시보드',
         theme_color: '#16161a',
         background_color: '#16161a',

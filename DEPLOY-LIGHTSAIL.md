@@ -1,6 +1,6 @@
 # AWS Lightsail 배포 가이드 (실제 배포 기록)
 
-autovest 를 AWS Lightsail(서울) + Docker + Tailscale 로 배포한 실제 과정.
+ETF 자동 적립 봇을 AWS Lightsail(서울) + Docker + Tailscale 로 배포한 실제 과정.
 서버에서 24시간 봇이 돌고, 대시보드는 Tailscale HTTPS 로만 접근(외부 포트 0개).
 
 ---
