@@ -143,7 +143,10 @@ function BrokerView({ broker }: { broker: string }) {
   useEffect(() => {
     load()
     const t = setInterval(() => {
-      api.botScheduler().then(setSched).catch(() => {})
+      // load() 전체를 다시 돌려서, 로딩 시점에 하필 브로커 쪽이 순간적으로 실패해
+      // "-"로 굳어버린 값(홀딩스·미리보기 등)이 다음 주기에 자동으로 복구되게 한다.
+      // (실사례: 키움 토큰이 순간 무효 응답 → 그 순간 fetch만 실패 → 재조회 전엔 계속 "-")
+      load()
       api.botRealtime().then(setRt).catch(() => {})
       api.marketStatus(broker).then((r) => setMarketOpen(r.open)).catch(() => {})
     }, 15000)

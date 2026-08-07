@@ -89,7 +89,8 @@ class KiwoomBroker(Broker):
 
     # ---------------- 공통 요청 ----------------
     def _request(self, api_id: str, path: str, body: dict | None = None,
-                 cont_yn: str | None = None, next_key: str | None = None) -> dict:
+                 cont_yn: str | None = None, next_key: str | None = None,
+                 _retried_auth: bool = False) -> dict:
         """키움 REST 공통 POST. 헤더에 authorization + api-id(TR), 본문은 JSON.
         실패해도 HTTP 200 + return_code!=0 으로 오므로 그것도 검사한다."""
         headers = {
@@ -113,6 +114,13 @@ class KiwoomBroker(Broker):
         resp.raise_for_status()
         data = resp.json()
         if data.get("return_code") not in (0, None):
+            # 8005: 캐시된 토큰을 아직 안 만료됐다고 보고 있는데 서버가 순간적으로 무효
+            # 처리하는 경우가 실사례로 확인됨(자연 복구되긴 했지만, 하필 그 순간이 매수
+            # tick이면 그대로 SKIP될 위험) — 토큰을 강제 재발급해서 딱 한 번만 재시도.
+            msg = str(data.get("return_msg", ""))
+            if not _retried_auth and ("8005" in msg or "Token" in msg or "토큰" in msg):
+                self._get_token(force=True)
+                return self._request(api_id, path, body, cont_yn, next_key, _retried_auth=True)
             raise RuntimeError(
                 f"키움 {api_id} 실패 (code={data.get('return_code')}): {data.get('return_msg', data)}"
             )
