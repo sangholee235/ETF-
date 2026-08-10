@@ -21,9 +21,7 @@ export default function App() {
   const initialTab = (['view', 'rank', 'bot', 'logs'].includes(location.hash.slice(1))
     ? location.hash.slice(1)
     : 'auto') as Tab
-  // 메뉴 버튼(탭 전환)이 사라져서 setter는 안 쓰지만, #view 등 직접 URL 접근은
-  // 여전히 initialTab이 처리하므로 tab 상태 자체는 유지.
-  const [tab] = useState<Tab>(initialTab)
+  const [tab, setTab] = useState<Tab>(initialTab)
   // 기본 워치리스트: 지수 ETF (KODEX200·미국S&P500·나스닥100·코스닥150)
   const DEFAULT_SYMBOLS = '069500,360750,133690,229200'
   const [symbols, setSymbols] = useState(() => localStorage.getItem('watchlist_v2') || DEFAULT_SYMBOLS)
@@ -101,7 +99,6 @@ export default function App() {
           </span>
           <span className="brand-name"><b>ETF</b></span>
         </div>
-        {/* 탭이 '적립' 하나뿐이라 메뉴 버튼 자체가 무의미 — 숨김(되살리려면 위 top-tabs 복원)
         <nav className="top-tabs">
           <button className={`tab ${tab === 'auto' ? 'on' : ''}`} onClick={() => setTab('auto')}>적립</button>
           <button className={`tab ${tab === 'view' ? 'on' : ''}`} onClick={() => setTab('view')}>조회</button>
@@ -109,7 +106,6 @@ export default function App() {
           <button className={`tab ${tab === 'bot' ? 'on' : ''}`} onClick={() => setTab('bot')}>적립봇</button>
           <button className={`tab ${tab === 'logs' ? 'on' : ''}`} onClick={() => setTab('logs')}>로그</button>
         </nav>
-        */}
         <span className="conn spacer" title={connected ? '백엔드 연결됨' : '백엔드 연결 끊김'}>
           <span className={`dot ${connected ? 'ok' : 'bad'}`} />
           {connected ? '연결됨' : '연결 끊김'}
@@ -271,7 +267,6 @@ export default function App() {
       </main>
       )}
 
-      {/* 모바일 하단 탭바도 버튼이 '적립' 하나뿐이라 같은 이유로 숨김
       <nav className="bottom-nav">
         <button className={tab === 'auto' ? 'on' : ''} onClick={() => setTab('auto')}>
           <span className="ico">💰</span>적립
@@ -289,7 +284,6 @@ export default function App() {
           <span className="ico">📜</span>로그
         </button>
       </nav>
-      */}
     </div>
   )
 }
