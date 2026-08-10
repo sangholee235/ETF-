@@ -54,6 +54,29 @@ def load_json(path: Path) -> dict | None:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def fetch_real_progress(broker: str) -> list[dict] | None:
+    """실계좌 보유현황 기준 목표비중 진행률 — 대시보드(/api/bot/preview)가 이미 검증해
+    쓰는 계산을 그대로 재사용한다(호스트에서 별도 재구현하면 값이 어긋날 위험이 있음).
+    state.portfolio_invested(봇 자체 장부)는 봇이 추적 시작한 시점 이후 매수만 누적된
+    값이라 실제 계좌 비중과 다를 수 있어 여기 쓰면 안 됨(실제로 이 차이 때문에
+    "나스닥100이 실제론 압도적으로 많은데 왜 33%로 뜨냐"는 오류를 겪었음).
+    컨테이너 밖(호스트)에서 돌기 때문에 docker exec로 컨테이너 내부 API를 호출한다."""
+    code = (
+        "import urllib.request, json; "
+        f"print(json.dumps(json.load(urllib.request.urlopen("
+        f"'http://127.0.0.1:8000/api/bot/preview?broker={broker}'))['progress']))"
+    )
+    try:
+        out = subprocess.run(
+            ["docker", "exec", "tossapi-backend-1", "python3", "-c", code],
+            capture_output=True, text=True, timeout=15, check=True,
+        )
+        return json.loads(out.stdout)
+    except Exception as e:
+        print(f"실계좌 비중 조회 실패({broker}): {e}", file=sys.stderr)
+        return None
+
+
 def broker_section(broker: str, today: str) -> str:
     state = load_json(STATE_DIR / f"bot_state_{broker}.json")
     config = load_json(CONFIG_DIR / f"bot_config_{broker}.json")
@@ -73,15 +96,35 @@ def broker_section(broker: str, today: str) -> str:
     lines.append(f"- SKIP: {len(skips)}건")
     lines.append("")
 
-    # 목표비중 달성 현황 — state.portfolio_invested(누적 투입, 결정론적 값) 기준.
+    # 목표비중 달성 현황 — 반드시 실계좌 보유현황 기준(fetch_real_progress). 실패 시에만
+    # state.portfolio_invested(봇 자체 장부)로 폴백하되, 부정확할 수 있음을 표로 명시.
     portfolio = (config or {}).get("portfolio") or []
-    invested = state.get("portfolio_invested") or {}
     items = [p for p in portfolio if p.get("symbol") and float(p.get("weight", 0)) > 0]
+    real_progress = fetch_real_progress(broker)
+
     total_w = sum(float(p["weight"]) for p in items) or 1.0
-    total_inv = sum(float(invested.get(p["symbol"], 0)) for p in items) or 1.0
-    if items:
-        lines.append("### 목표비중 달성 현황")
-        lines.append("| 종목 | 목표비중 | 현재비중(누적투입 기준) | 차이 |")
+    if items and real_progress is not None:
+        by_symbol = {p["symbol"]: p for p in real_progress}
+        lines.append("### 목표비중 달성 현황 (실계좌 보유현황 기준)")
+        lines.append("| 종목 | 목표비중 | 현재비중 | 차이 |")
+        lines.append("|---|---|---|---|")
+        for p in items:
+            rp = by_symbol.get(p["symbol"])
+            target = float(p["weight"]) / total_w * 100
+            current = rp["currentWeight"] * 100 if rp else 0.0
+            gap = target - current
+            sign = "부족" if gap > 0 else "초과"
+            lines.append(
+                f"| {p.get('name', p['symbol'])} ({p['symbol']}) | {target:.1f}% | "
+                f"{current:.1f}% | {abs(gap):.1f}%p {sign} |"
+            )
+        lines.append("")
+    elif items:
+        # 실계좌 조회 실패(컨테이너 재시작 중 등) — 부정확할 수 있는 값임을 표에서부터 밝힘
+        invested = state.get("portfolio_invested") or {}
+        total_inv = sum(float(invested.get(p["symbol"], 0)) for p in items) or 1.0
+        lines.append("### 목표비중 달성 현황 (⚠️ 실계좌 조회 실패 — 봇 자체 장부 기준, 부정확할 수 있음)")
+        lines.append("| 종목 | 목표비중 | 현재비중(추정) | 차이 |")
         lines.append("|---|---|---|---|")
         for p in items:
             target = float(p["weight"]) / total_w * 100
