@@ -39,7 +39,12 @@ def test_summary_does_not_crash_on_empty_logs():
 
 
 def test_cash_short_skip_is_deduplicated_but_not_blocked():
-    _cfg().save()  # kiwoom 브로커용 설정 파일을 임시 디렉터리에 미리 기록
+    # broker 인자 없이 save()하면 os.getenv("BROKER", "toss")로 폴백되는데, 로컬 .env엔
+    # BROKER=kiwoom이 있어 우연히 맞아떨어지고 CI(환경변수 없음)에서는 "toss"로 떨어져
+    # 어긋남 — 환경변수에 의존하지 않도록 브로커를 명시적으로 지정해서 저장.
+    cfg = _cfg()
+    cfg._broker = "kiwoom"
+    cfg.save()
     # 매수가능금액이 1주(30,000원) 값도 안 되는 상황
     poor_client = FakeClient(buying_power=100, last_price=30_000)
 
