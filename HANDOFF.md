@@ -124,6 +124,9 @@ docker compose up -d                # http://localhost:8080
 - 접근: **Tailscale serve HTTPS** `https://ip-172-26-7-8.<tailnet>.ts.net/` (내 기기만). 8080 미개방 + 127.0.0.1 바인딩 = 이중 차단.
 - **CI/CD 무인 배포**: `git push` → Actions(pytest+tsc→이미지빌드→ghcr.io) → 서버 Watchtower 자동교체. ghcr 패키지는 public(서버 무자격 pull). bot_data 볼륨로 상태 유지.
 - **디스코드 알림**: 실시간 체결 시 "🟢 체결 …"(키움 LIVE만). 서버 `.env`에 `DISCORD_WEBHOOK_URL` 넣어야 동작.
+- **일일 실행기록 자동 커밋**: `backend/scripts/daily_report.py`(원본은 이 리포, 서버 배포본은 `/root/scripts/daily_report.py`)가 평일 15:35 KST(크론 `35 6 * * 1-5` UTC)에 그날 `bot_state_*.json` 로그를 읽어 마크다운으로 정리해 **완전히 별도인 GitHub 리포**(`sangholee235/ETF-bot-daily-log`, public)에 커밋·push. 메인 앱 리포와 자격증명이 물리적으로 분리돼있음(그 리포 전용 Deploy Key, `/root/.ssh/daily_log_deploy_key` — 계정 전체 권한 아니고 그 리포 하나만 쓰기 가능). LLM 없이 JSON 로그를 그대로 결정론적으로 렌더링(이 프로젝트의 "예측하지 않는다" 철학과 일치).
+  - 주의: `bot_config_*.json`은 볼륨 최상위, `bot_state_*.json`은 `data/` 하위 — 경로가 다름(각 모듈의 `_DATA_DIR` 계산이 다르기 때문). 스크립트가 root로 도는 이유: 볼륨 파일이 root 소유라 ubuntu 유저로는 직접 못 읽음(NOPASSWD sudo 필요).
+  - OrderLog에 `price`는 시장가 매수 시 항상 `None`(체결 전 미확정)이라 실제 가격은 `reason` 문자열("...{가격:,}원 기준")에서 정규식으로 복원해야 함 — 처음 구현 땐 이걸 몰라서 "총 매수금액 0원"으로 잘못 나왔었음.
 
 세션별 작업 상세는 **`DEVLOG.md`** 참고.
 
