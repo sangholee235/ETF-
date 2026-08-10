@@ -63,13 +63,12 @@ def run_once(client: TossClient | None = None, broker: str | None = None,
         state.add_log(log); state.save()
         return _summary(cfg, state, [log])
 
-    # 2b. 오늘 이미 현금 부족으로 SKIP한 적 있으면 조용히 종료 (로그 없음).
-    #     입금이 들어오면 내일 아침에 자동으로 재시도한다.
-    today = date.today().isoformat()
-    if state.cash_exhausted_date == today:
-        return _summary(cfg, state, [])
-
     # 3. 오늘 매수 계획 수립: '오늘 남은' 한도(이미 오늘 쓴 만큼 차감) 안에서 그리디하게
+    #    (예전엔 "오늘 이미 현금부족으로 SKIP함" 이면 여기부터 통째로 건너뛰었는데,
+    #    그러면 낮에 입금이 들어와도 그날 안에는 절대 못 알아챔 — 매 tick마다 항상
+    #    다시 계산해서, 입금·가격변동이 있으면 바로 그 tick에서 살 수 있게 한다.
+    #    대신 사유가 어제와 똑같은 "현금 부족"이면 로그만 중복으로 안 남긴다(도배 방지).)
+    today = date.today().isoformat()
     bp = _buying_power(client)
     current_values = _holdings_values(client, cfg) or {}
     prices = _portfolio_prices(client, cfg)
@@ -78,25 +77,31 @@ def run_once(client: TossClient | None = None, broker: str | None = None,
 
     if not plan:
         missing = _missing_price_symbols(cfg, prices)
+        cash_related = False
         if not prices:
             # 시세를 하나도 못 가져옴 — 균형/예산 문제가 아니라 일시적 조회 실패
             reason = "시세를 하나도 가져오지 못했습니다 — 다음 확인 때 재시도"
         elif missing:
-            # 일부 종목만 시세 조회 실패 — '균형 도달'이 아니라 일시적 조회 실패이므로
-            # 억제(cash_exhausted_date)하지 않고 다음 확인 때 바로 재시도한다.
+            # 일부 종목만 시세 조회 실패 — '균형 도달'이 아니라 일시적 조회 실패
             reason = f"시세 조회 실패: {', '.join(missing)} — 다음 확인 때 재시도"
         elif budget <= 0:
             reason = "매수가능금액/오늘 남은 한도로 1주도 못 삽니다"
-            state.cash_exhausted_date = today
+            cash_related = True
         elif has_underweight_target(cfg, current_values, prices):
             # 목표비중 미달 종목이 있지만 지금 예산으론 그 종목 1주도 못 삼 — '균형'과는 다름.
             # 주의: 실제 가격×수량은 예산 안에 들어와도, 시장가 증거금 버퍼(가격×1.3, 추정치)
             # 때문에 여기 걸릴 수 있음 — "진짜 돈이 모자란다"는 뜻이 아닐 수 있어 문구를 구체적으로.
             reason = ("목표비중 미달 종목이 있지만 시장가 증거금 버퍼(가격의 1.3배, 상한가 기준 추정치) "
                       "때문에 지금 예산으론 1주도 못 삽니다 — 실제 가격보단 여유있게 예산을 잡아야 합니다")
-            state.cash_exhausted_date = today
+            cash_related = True
         else:
             reason = "오늘 살 게 없음 — 이미 목표 비중 도달"
+
+        if cash_related and state.cash_exhausted_date == today:
+            # 오늘 이미 같은 사유로 로그를 남겼음 — 계산은 매 tick 계속하되 로그 중복만 방지
+            return _summary(cfg, state, [])
+        if cash_related:
+            state.cash_exhausted_date = today
         log = executor.execute(client, cfg, state, _skip(reason))
         state.add_log(log); state.save()
         return _summary(cfg, state, [log])
@@ -232,15 +237,19 @@ def _summary(cfg: BotConfig, state: BotState, logs: list) -> dict:
             "reason": f"{len(buys)}개 종목 매수: " + ", ".join(f"{lg.symbol} {lg.quantity}주" for lg in buys),
             "price": total,
         }
-    else:
+    elif logs:
         last = logs[-1]
         decision = {"action": last.action, "price": last.price, "reason": last.reason}
+    else:
+        # logs가 완전히 비어있는 경우(예: 오늘 이미 같은 사유로 로그를 남겨서 이번엔
+        # 로그 자체를 안 남긴 tick) — logs[-1] 접근하면 IndexError 나던 걸 방지.
+        decision = {"action": "SKIP", "price": None, "reason": "이전과 동일한 사유로 로그 생략"}
     return {
         "mode": "DRY_RUN" if cfg.dry_run else "LIVE",
         "enabled": cfg.enabled,
         "symbol": logs[-1].symbol if logs else None,
         "decision": decision,
-        "filled": all(lg.filled for lg in buys) if buys else logs[-1].filled,
+        "filled": all(lg.filled for lg in buys) if buys else (logs[-1].filled if logs else None),
         "consecutiveMisses": state.consecutive_misses,
         "totalInvestedKrw": state.total_invested_krw,
         "totalFilledQty": state.total_filled_qty,

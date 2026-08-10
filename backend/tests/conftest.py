@@ -33,6 +33,9 @@ class FakeClient:
     def get_buying_power(self, currency="KRW"):
         return {"currency": currency, "cashBuyingPower": str(self._bp)}
 
+    def get_holdings(self):
+        return {"items": []}
+
     def get_kr_market_calendar(self, date=None):
         # 실행 시각과 무관하게 결정적이도록 '오늘(KST) 하루 전체'를 운영시간으로 본다.
         from datetime import datetime, timezone, timedelta
