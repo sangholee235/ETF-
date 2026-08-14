@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, loadQuotes } from './api'
 import type { Account, BuyingPower, Holdings, Order, Quote } from './types'
 import AutoPage from './AutoPage'
-import BotPanel from './BotPanel'
+import BacktestOnly from './BacktestOnly'
 import Chart from './Chart'
 import HoldingsDonut from './HoldingsDonut'
 import LogsPanel from './LogsPanel'
@@ -113,7 +113,7 @@ export default function App() {
       {tab === 'auto' ? (
         <main className="single"><AutoPage /></main>
       ) : tab === 'bot' ? (
-        <main className="single"><BotPanel /></main>
+        <main className="single"><BacktestOnly /></main>
       ) : tab === 'logs' ? (
         <main className="view-grid"><LogsPanel /></main>
       ) : tab === 'rank' ? (
