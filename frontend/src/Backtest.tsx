@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api } from './api'
 import AvgPriceChart from './AvgPriceChart'
 import type { BacktestResult } from './types'
@@ -92,11 +92,30 @@ export default function Backtest({ symbol, name, broker }: { symbol: string; nam
 function Field({ label, value, step, onChange }: {
   label: string; value: number; step: number; onChange: (v: number) => void
 }) {
+  // 문자열로 따로 들고 있다가 숫자로 파싱되는 시점에만 부모로 올린다. value를 그대로
+  // input에 바인딩하면 지우고 새로 입력하는 중간(빈 문자열)에 Number('')=0으로 즉시
+  // 되돌아가버려서, 정수부 자릿수를 늘려 입력하는 게 사실상 불가능했던 문제를 고쳤다.
+  const [text, setText] = useState(String(value))
+
+  useEffect(() => {
+    // 외부(리셋 등)에서 value가 바뀐 경우에만 동기화 — 타이핑 중엔 건드리지 않는다.
+    if (Number(text) !== value) setText(String(value))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value])
+
+  const commit = (raw: string) => {
+    setText(raw)
+    if (raw === '' || raw === '-') return
+    const n = Number(raw)
+    if (!Number.isNaN(n)) onChange(n)
+  }
+
   return (
     <div className="stat">
       <div className="muted">{label}</div>
-      <input type="number" step={step} value={value}
-             onChange={(e) => onChange(Number(e.target.value))}
+      <input type="number" step={step} value={text}
+             onChange={(e) => commit(e.target.value)}
+             onBlur={() => { if (text === '' || text === '-' || Number.isNaN(Number(text))) setText(String(value)) }}
              style={{ width: 120, marginTop: 4 }} />
     </div>
   )

@@ -101,10 +101,7 @@ export default function App() {
         </div>
         <nav className="top-tabs">
           <button className={`tab ${tab === 'auto' ? 'on' : ''}`} onClick={() => setTab('auto')}>적립</button>
-          <button className={`tab ${tab === 'view' ? 'on' : ''}`} onClick={() => setTab('view')}>조회</button>
-          <button className={`tab ${tab === 'rank' ? 'on' : ''}`} onClick={() => setTab('rank')}>랭킹</button>
           <button className={`tab ${tab === 'bot' ? 'on' : ''}`} onClick={() => setTab('bot')}>적립봇</button>
-          <button className={`tab ${tab === 'logs' ? 'on' : ''}`} onClick={() => setTab('logs')}>로그</button>
         </nav>
         <span className="conn spacer" title={connected ? '백엔드 연결됨' : '백엔드 연결 끊김'}>
           <span className={`dot ${connected ? 'ok' : 'bad'}`} />
@@ -271,17 +268,8 @@ export default function App() {
         <button className={tab === 'auto' ? 'on' : ''} onClick={() => setTab('auto')}>
           <span className="ico">💰</span>적립
         </button>
-        <button className={tab === 'view' ? 'on' : ''} onClick={() => setTab('view')}>
-          <span className="ico">📊</span>조회
-        </button>
-        <button className={tab === 'rank' ? 'on' : ''} onClick={() => setTab('rank')}>
-          <span className="ico">🏆</span>랭킹
-        </button>
         <button className={tab === 'bot' ? 'on' : ''} onClick={() => setTab('bot')}>
           <span className="ico">🤖</span>적립봇
-        </button>
-        <button className={tab === 'logs' ? 'on' : ''} onClick={() => setTab('logs')}>
-          <span className="ico">📜</span>로그
         </button>
       </nav>
     </div>
